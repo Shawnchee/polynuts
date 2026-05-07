@@ -6,6 +6,7 @@ import { WagmiProvider } from 'wagmi';
 import { RainbowKitProvider, lightTheme } from '@rainbow-me/rainbowkit';
 import { Toaster } from 'sonner';
 import { wagmiConfig } from '@/lib/wagmi';
+import { LiveFeedBoot } from '@/components/system/LiveFeedBoot';
 import '@rainbow-me/rainbowkit/styles.css';
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -34,6 +35,7 @@ export function Providers({ children }: { children: ReactNode }) {
           })}
           modalSize="compact"
         >
+          <LiveFeedBoot />
           {children}
           <Toaster
             position="top-right"

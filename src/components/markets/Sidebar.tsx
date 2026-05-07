@@ -6,14 +6,15 @@ import { DirectionTag } from '@/components/ui/DirectionTag';
 
 export function Sidebar() {
   const activity = useAppStore((s) => s.activity);
+  const livePrices = useAppStore((s) => s.prices);
   const { data: marketData } = useMarketData();
+
+  const eth = livePrices.ETH ?? marketData?.prices?.ETH;
+  const btc = livePrices.BTC ?? marketData?.prices?.BTC;
 
   return (
     <aside className="flex w-[280px] shrink-0 flex-col gap-4">
-      <PriceTickers
-        eth={marketData?.prices?.ETH}
-        btc={marketData?.prices?.BTC}
-      />
+      <PriceTickers eth={eth} btc={btc} />
       <Panel title="Live Activity">
         <div className="scrollbar-thin max-h-[420px] overflow-y-auto">
           {activity.length === 0 ? (
