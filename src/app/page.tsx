@@ -8,6 +8,7 @@ import { Sidebar } from '@/components/markets/Sidebar';
 import { TradePanel } from '@/components/trade/TradePanel';
 import { useMarkets } from '@/lib/sdk/useOrders';
 import { useAppStore, applyFilterSort } from '@/store/app';
+import { cn } from '@/lib/utils';
 
 export default function MarketsPage() {
   const { markets, isLoading, error, refetch } = useMarkets();
@@ -22,16 +23,17 @@ export default function MarketsPage() {
   );
 
   const selectedMarket =
-    filtered.find((m) => m.id === selectedId) ?? markets.find((m) => m.id === selectedId) ?? null;
+    filtered.find((m) => m.id === selectedId) ??
+    markets.find((m) => m.id === selectedId) ??
+    null;
 
   return (
-    <div className="min-h-screen bg-ink-50">
+    <div className="min-h-dvh">
       <TopNav active="/" />
       <FilterStrip count={filtered.length} />
 
       <main className="mx-auto max-w-page px-6 py-6">
         <div className="flex flex-col gap-6 lg:flex-row">
-          {/* Markets grid */}
           <section className="min-w-0 flex-1">
             {isLoading && <SkeletonGrid />}
             {error != null && (
@@ -40,25 +42,29 @@ export default function MarketsPage() {
                 onRetry={() => refetch()}
               />
             )}
-            {!isLoading && !error && filtered.length === 0 && (
-              <EmptyState />
-            )}
+            {!isLoading && !error && filtered.length === 0 && <EmptyState />}
             {!isLoading && filtered.length > 0 && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {filtered.map((m) => (
-                  <MarketCard
+                {filtered.map((m, i) => (
+                  <div
                     key={m.id}
-                    market={m}
-                    selected={selectedId === m.id}
-                    onSelect={selectMarket}
-                  />
+                    className={cn(
+                      'animate-fade-in',
+                      i < 8 && `stagger-${(i % 8) + 1}`
+                    )}
+                  >
+                    <MarketCard
+                      market={m}
+                      selected={selectedId === m.id}
+                      onSelect={selectMarket}
+                    />
+                  </div>
                 ))}
               </div>
             )}
           </section>
 
-          {/* Right column: trade panel + sidebar */}
-          <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[300px]">
+          <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[320px]">
             <div className="lg:sticky lg:top-20">
               <TradePanel market={selectedMarket} />
             </div>
@@ -78,8 +84,12 @@ function SkeletonGrid() {
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
-          className="h-44 animate-pulse rounded-lg border border-ink-200 bg-white"
-        />
+          className={cn(
+            'relative h-44 overflow-hidden rounded-xl border border-line bg-bg-elev'
+          )}
+        >
+          <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-surface-hover to-transparent" />
+        </div>
       ))}
     </div>
   );
@@ -87,9 +97,9 @@ function SkeletonGrid() {
 
 function EmptyState() {
   return (
-    <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-ink-200 bg-white">
-      <p className="text-md font-medium text-ink-900">No live markets right now</p>
-      <p className="mt-1 text-sm text-ink-600">
+    <div className="flex h-64 animate-fade-in flex-col items-center justify-center rounded-xl border border-dashed border-line bg-bg-elev">
+      <p className="text-md font-medium text-text">No live markets right now</p>
+      <p className="mt-1 text-sm text-text-muted">
         New markets show up as makers post orders. Refreshes every 30 seconds.
       </p>
     </div>
@@ -98,11 +108,11 @@ function EmptyState() {
 
 function ErrorState({ msg, onRetry }: { msg: string; onRetry: () => void }) {
   return (
-    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-dump-border bg-dump-light">
-      <p className="text-md font-medium text-dump">{msg}</p>
+    <div className="flex h-64 animate-fade-in flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-dump/40 bg-dump/5">
+      <p className="text-md font-medium text-dump dark:text-dump-dark">{msg}</p>
       <button
         onClick={onRetry}
-        className="rounded-md bg-dump px-4 py-2 text-sm font-semibold text-white hover:bg-dump/90"
+        className="press-scale rounded-md bg-dump px-4 py-2 text-sm font-semibold text-white hover:bg-dump/90 transition-colors"
       >
         Retry
       </button>

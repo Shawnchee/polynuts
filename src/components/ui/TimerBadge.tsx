@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
-import { fmtTimeLeft, isUrgent } from '@/lib/utils';
+import { cn, fmtTimeLeft, isUrgent } from '@/lib/utils';
+import { Clock } from 'lucide-react';
 
 export function TimerBadge({ expirySec }: { expirySec: number }) {
-  const [tick, setTick] = useState(0);
+  const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30_000);
     return () => clearInterval(id);
@@ -13,12 +13,12 @@ export function TimerBadge({ expirySec }: { expirySec: number }) {
   const urgent = isUrgent(expirySec);
   return (
     <span
-      key={tick}
       className={cn(
-        'num text-sm tabular-nums',
-        urgent ? 'text-dump font-semibold' : 'text-ink-600'
+        'num inline-flex items-center gap-1 text-xs tabular-nums',
+        urgent ? 'text-dump font-semibold' : 'text-text-muted'
       )}
     >
+      <Clock className="h-2.5 w-2.5" aria-hidden />
       {fmtTimeLeft(expirySec)}
     </span>
   );

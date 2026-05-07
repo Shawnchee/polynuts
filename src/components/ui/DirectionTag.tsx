@@ -1,10 +1,26 @@
 import { cn } from '@/lib/utils';
 import type { Direction } from '@/lib/sdk/markets';
+import { ArrowDown, ArrowRightLeft, ArrowUp } from 'lucide-react';
 
-const map: Record<Direction, { label: string; symbol: string; cls: string }> = {
-  PUMP: { label: 'PUMP', symbol: '↑', cls: 'bg-pump-light text-pump border-pump-border' },
-  DUMP: { label: 'DUMP', symbol: '↓', cls: 'bg-dump-light text-dump border-dump-border' },
-  RANGE: { label: 'RANGE', symbol: '↔', cls: 'bg-range-light text-range border-range-border' },
+const map: Record<
+  Direction,
+  { label: string; cls: string; Icon: typeof ArrowUp }
+> = {
+  PUMP: {
+    label: 'PUMP',
+    cls: 'bg-pump-light dark:bg-pump/15 text-pump dark:text-pump-dark border-pump/30',
+    Icon: ArrowUp,
+  },
+  DUMP: {
+    label: 'DUMP',
+    cls: 'bg-dump-light dark:bg-dump/15 text-dump dark:text-dump-dark border-dump/30',
+    Icon: ArrowDown,
+  },
+  RANGE: {
+    label: 'RANGE',
+    cls: 'bg-range-light dark:bg-range/15 text-range dark:text-range-dark border-range/30',
+    Icon: ArrowRightLeft,
+  },
 };
 
 export function DirectionTag({
@@ -15,15 +31,20 @@ export function DirectionTag({
   size?: 'sm' | 'md';
 }) {
   const c = map[direction];
+  const Icon = c.Icon;
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-sm border font-bold uppercase',
+        'inline-flex items-center gap-1 rounded-md border font-bold uppercase',
         size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm',
         c.cls
       )}
     >
-      {c.label} <span className="num">{c.symbol}</span>
+      <Icon
+        className={size === 'sm' ? 'h-2.5 w-2.5 stroke-[3]' : 'h-3.5 w-3.5 stroke-[3]'}
+        aria-hidden
+      />
+      {c.label}
     </span>
   );
 }

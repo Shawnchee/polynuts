@@ -30,10 +30,8 @@ export default function PortfolioPage() {
     <PageShell active="/portfolio">
       <div className="flex flex-col gap-6">
         <div>
-          <h1 className="text-xl font-bold text-ink-900">Portfolio</h1>
-          <p className="num mt-1 text-sm text-ink-600">
-            {shortAddress(address ?? '')}
-          </p>
+          <h1 className="text-xl font-bold text-text">Portfolio</h1>
+          <p className="num mt-1 text-sm text-text-muted">{shortAddress(address ?? '')}</p>
         </div>
 
         <SummaryBar summary={summary} loading={posLoading || histLoading} />
@@ -62,9 +60,9 @@ export default function PortfolioPage() {
 
 function ConnectGate() {
   return (
-    <div className="flex h-[60vh] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-ink-200 bg-white p-12">
-      <h1 className="text-xl font-bold text-ink-900">Connect your wallet</h1>
-      <p className="max-w-sm text-center text-sm text-ink-600">
+    <div className="flex h-[60vh] flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-line bg-bg-elev p-12">
+      <h1 className="text-xl font-bold text-text">Connect your wallet</h1>
+      <p className="max-w-sm text-center text-sm text-text-muted">
         Sign in to see your open positions, settled history, and P&amp;L.
       </p>
       <ConnectButton />
@@ -84,12 +82,8 @@ interface Summary {
 
 function buildSummary(positions: Position[], history: TradeHistory[]): Summary {
   let totalPnl = 0;
-  for (const p of positions) {
-    totalPnl += Number(p.pnl) / 1e6;
-  }
+  for (const p of positions) totalPnl += Number(p.pnl) / 1e6;
   const settled = history.filter((h) => h.type === 'settle' || h.type === 'exercise');
-  // We don't have a clean per-trade PnL signal in TradeHistory — use entryFeePaid
-  // and amount × price as a rough realized component.
   let realized = 0;
   let biggestWin = 0;
   let wins = 0;
@@ -109,33 +103,26 @@ function buildSummary(positions: Position[], history: TradeHistory[]): Summary {
 function SummaryBar({ summary, loading }: { summary: Summary; loading: boolean }) {
   const cells: { label: string; value: string; tone?: 'pnl' }[] = [
     { label: 'Total P&L', value: fmtUsd(summary.totalPnl), tone: 'pnl' },
-    {
-      label: 'Win Rate',
-      value: `${Math.round(summary.winRate * 100)}%`,
-    },
+    { label: 'Win Rate', value: `${Math.round(summary.winRate * 100)}%` },
     { label: 'Total Bets', value: summary.totalBets.toString() },
     { label: 'Biggest Win', value: fmtUsd(summary.biggestWin) },
   ];
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {cells.map((c) => (
-        <div key={c.label} className="rounded-lg border border-ink-200 bg-white px-4 py-3">
-          <div className="label text-ink-400">{c.label}</div>
-          <div className="num mt-1 text-lg font-bold tabular-nums text-ink-900">
-            {loading ? '…' : c.tone === 'pnl' ? (
-              <PnlInline amount={summary.totalPnl} />
-            ) : (
-              c.value
-            )}
+      {cells.map((c, i) => (
+        <div
+          key={c.label}
+          className="card-lift rounded-xl border border-line bg-bg-elev px-4 py-3 animate-fade-in"
+          style={{ animationDelay: `${i * 40}ms` }}
+        >
+          <div className="label text-text-dim">{c.label}</div>
+          <div className="num mt-1 text-lg font-bold tabular-nums text-text">
+            {loading ? '…' : c.tone === 'pnl' ? <PnlPill amount={summary.totalPnl} /> : c.value}
           </div>
         </div>
       ))}
     </div>
   );
-}
-
-function PnlInline({ amount }: { amount: number }) {
-  return <PnlPill amount={amount} />;
 }
 
 function Section({
@@ -152,17 +139,17 @@ function Section({
   children?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-ink-200 bg-white">
-      <div className="flex items-center justify-between border-b border-ink-200 px-4 py-3">
+    <section className="overflow-hidden rounded-xl border border-line bg-bg-elev animate-fade-in">
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-md font-semibold text-ink-900">{title}</h2>
-          <span className="num text-sm text-ink-400">{count}</span>
+          <h2 className="text-md font-semibold text-text">{title}</h2>
+          <span className="num text-sm text-text-dim">{count}</span>
         </div>
       </div>
       {loading ? (
-        <div className="px-4 py-12 text-center text-sm text-ink-400">Loading…</div>
+        <div className="px-4 py-12 text-center text-sm text-text-dim">Loading…</div>
       ) : count === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-ink-400">{empty}</div>
+        <div className="px-4 py-12 text-center text-sm text-text-dim">{empty}</div>
       ) : (
         children
       )}
@@ -174,8 +161,8 @@ function PositionsTable({ rows }: { rows: Position[] }) {
   return (
     <div className="scrollbar-thin overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="border-b border-ink-200 bg-ink-50 text-left">
-          <tr className="label text-ink-600">
+        <thead className="border-b border-line bg-bg-subtle text-left">
+          <tr className="label text-text-muted">
             <Th>Position</Th>
             <Th>Side</Th>
             <Th align="right">Contracts</Th>
@@ -185,32 +172,28 @@ function PositionsTable({ rows }: { rows: Position[] }) {
             <Th>Status</Th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-ink-200">
+        <tbody className="divide-y divide-line">
           {rows.map((p) => (
-            <tr key={p.id} className="hover:bg-ink-50">
+            <tr key={p.id} className="transition-colors hover:bg-surface-hover">
               <Td>
-                <span className="font-medium text-ink-900">{p.option.underlying}</span>
-                <span className="ml-2 text-ink-400">
-                  {p.option.strikes
-                    .map((s) => `$${(Number(s) / 1e8).toLocaleString()}`)
-                    .join(' / ')}
+                <span className="font-medium text-text">{p.option.underlying}</span>
+                <span className="ml-2 text-text-dim">
+                  {p.option.strikes.map((s) => `$${(Number(s) / 1e8).toLocaleString()}`).join(' / ')}
                 </span>
               </Td>
               <Td>
                 <span
                   className={
                     p.side === 'buyer'
-                      ? 'text-pump font-semibold uppercase'
-                      : 'text-dump font-semibold uppercase'
+                      ? 'font-semibold uppercase text-pump dark:text-pump-dark'
+                      : 'font-semibold uppercase text-dump dark:text-dump-dark'
                   }
                 >
                   {p.side === 'buyer' ? 'YES' : 'NO'}
                 </span>
               </Td>
               <Td align="right" mono>
-                {(Number(p.amount) / 1e6).toLocaleString('en-US', {
-                  maximumFractionDigits: 4,
-                })}
+                {(Number(p.amount) / 1e6).toLocaleString('en-US', { maximumFractionDigits: 4 })}
               </Td>
               <Td align="right" mono>
                 {fmtUsd(Number(p.entryPrice) / 1e8, { compact: true })}
@@ -222,7 +205,7 @@ function PositionsTable({ rows }: { rows: Position[] }) {
                 <TimerBadge expirySec={p.option.expiry} />
               </Td>
               <Td>
-                <span className="rounded-sm bg-ink-100 px-2 py-0.5 text-xs uppercase text-ink-600">
+                <span className="rounded-md bg-bg-subtle px-2 py-0.5 text-xs uppercase text-text-muted">
                   {p.status}
                 </span>
               </Td>
@@ -239,8 +222,8 @@ function HistoryTable({ rows }: { rows: TradeHistory[] }) {
   return (
     <div className="scrollbar-thin overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="border-b border-ink-200 bg-ink-50 text-left">
-          <tr className="label text-ink-600">
+        <thead className="border-b border-line bg-bg-subtle text-left">
+          <tr className="label text-text-muted">
             <Th>Time</Th>
             <Th>Type</Th>
             <Th>Asset</Th>
@@ -249,16 +232,16 @@ function HistoryTable({ rows }: { rows: TradeHistory[] }) {
             <Th>Tx</Th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-ink-200">
+        <tbody className="divide-y divide-line">
           {sorted.map((h) => (
-            <tr key={`${h.id}-${h.txHash}`} className="hover:bg-ink-50">
+            <tr key={`${h.id}-${h.txHash}`} className="transition-colors hover:bg-surface-hover">
               <Td>
-                <span className="num text-ink-600">
+                <span className="num text-text-muted">
                   {new Date(h.timestamp * 1000).toLocaleString()}
                 </span>
               </Td>
               <Td>
-                <span className="uppercase text-ink-900">{h.type}</span>
+                <span className="uppercase text-text">{h.type}</span>
               </Td>
               <Td>{h.option.underlying}</Td>
               <Td align="right" mono>
@@ -287,19 +270,9 @@ function HistoryTable({ rows }: { rows: TradeHistory[] }) {
   );
 }
 
-function Th({
-  children,
-  align,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-}) {
+function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
   return (
-    <th
-      className={
-        'px-4 py-2 ' + (align === 'right' ? 'text-right' : 'text-left')
-      }
-    >
+    <th className={'px-4 py-2 ' + (align === 'right' ? 'text-right' : 'text-left')}>
       {children}
     </th>
   );

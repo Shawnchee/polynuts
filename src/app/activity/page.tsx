@@ -30,21 +30,21 @@ export default function ActivityPage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold text-ink-900">Live Activity</h1>
-            <p className="mt-1 text-sm text-ink-600">
-              Every order, fill, and cancel hitting the OptionBook in real time.
+            <h1 className="text-xl font-bold text-text">Live Activity</h1>
+            <p className="mt-1 text-sm text-text-muted">
+              Bets you place will stream here in real time.
             </p>
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-ink-200 bg-white p-1">
+          <div className="flex items-center gap-1 rounded-md border border-line bg-bg-elev p-1">
             {filters.map((f) => (
               <button
                 key={f.id}
                 onClick={() => setFilter(f.id)}
                 className={cn(
-                  'rounded-sm px-3 py-1.5 text-sm font-medium transition-colors',
+                  'press-scale rounded-sm px-3 py-1.5 text-sm font-medium transition-all duration-180',
                   filter === f.id
-                    ? 'bg-ink-900 text-white'
-                    : 'text-ink-600 hover:text-ink-900'
+                    ? 'bg-text text-bg-elev'
+                    : 'text-text-muted hover:text-text'
                 )}
               >
                 {f.label}
@@ -53,17 +53,18 @@ export default function ActivityPage() {
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-lg border border-ink-200 bg-white">
+        <section className="overflow-hidden rounded-xl border border-line bg-bg-elev">
           {rows.length === 0 ? (
             <div className="flex h-[60vh] flex-col items-center justify-center gap-2 px-4 text-center">
-              <p className="text-md font-medium text-ink-900">Quiet on the wire</p>
-              <p className="max-w-sm text-sm text-ink-600">
-                Once orders fill on the OptionBook, you&apos;ll see them stream in
-                here live. No reload needed.
+              <p className="text-md font-medium text-text">Quiet on the wire</p>
+              <p className="max-w-sm text-sm text-text-muted">
+                Place a bet on the Markets page to see the feed light up. The
+                activity feed currently shows fills you initiate from this
+                browser session.
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-ink-200">
+            <ul className="divide-y divide-line">
               {rows.map((row) => (
                 <Row key={row.id} item={row} />
               ))}
@@ -83,29 +84,27 @@ function Row({ item }: { item: ActivityItem }) {
       ? 'bg-dump'
       : item.direction === 'RANGE'
       ? 'bg-range'
-      : 'bg-ink-400';
+      : 'bg-text-dim';
   const tag =
     item.kind === 'filled'
-      ? { label: 'FILLED', cls: 'bg-pump-light text-pump' }
+      ? { label: 'FILLED', cls: 'bg-pump-light dark:bg-pump/15 text-pump dark:text-pump-dark' }
       : item.kind === 'cancelled'
-      ? { label: 'CANCELLED', cls: 'bg-dump-light text-dump' }
-      : { label: 'NEW', cls: 'bg-brand-light text-brand' };
+      ? { label: 'CANCELLED', cls: 'bg-dump-light dark:bg-dump/15 text-dump dark:text-dump-dark' }
+      : { label: 'NEW', cls: 'bg-brand-light dark:bg-brand/15 text-brand' };
 
   return (
-    <li className="grid animate-fade-in grid-cols-[16px_1fr_120px_80px] items-center gap-3 px-4 py-3">
+    <li className="grid animate-fade-in grid-cols-[16px_1fr_120px_80px] items-center gap-3 px-4 py-3 transition-colors duration-180 hover:bg-surface-hover">
       <span className={cn('h-2 w-2 rounded-full', dot)} />
-      <span className="truncate text-sm text-ink-900">
-        {item.question ?? item.kind}
-      </span>
+      <span className="truncate text-sm text-text">{item.question ?? item.kind}</span>
       <span
         className={cn(
-          'justify-self-end rounded-sm px-2 py-0.5 text-xs font-bold uppercase',
+          'justify-self-end rounded-md px-2 py-0.5 text-xs font-bold uppercase',
           tag.cls
         )}
       >
         {tag.label}
       </span>
-      <span className="num justify-self-end text-xs text-ink-400">{ago(item.ts)}</span>
+      <span className="num justify-self-end text-xs text-text-dim">{ago(item.ts)}</span>
     </li>
   );
 }

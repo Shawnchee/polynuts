@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
+import { ThemeToggle } from '@/components/nav/ThemeToggle';
 import { cn } from '@/lib/utils';
 
 const tabs = [
@@ -18,14 +19,17 @@ export function TopNav({ active = '/' }: { active?: string }) {
   const { data: bal } = useUsdcBalance();
 
   return (
-    <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/80 backdrop-blur">
+    <header className="sticky top-0 z-30 glass border-b border-line">
       <div className="mx-auto flex h-14 max-w-page items-center justify-between px-6">
         <div className="flex items-center gap-8">
-          <Link href="/" className="select-none text-md font-bold tracking-tight">
+          <Link
+            href="/"
+            className="select-none text-md font-bold tracking-tight transition-opacity hover:opacity-90"
+          >
             <span className="text-brand">poly</span>
-            <span className="text-ink-900">nuts</span>
+            <span className="text-text">nuts</span>
           </Link>
-          <nav className="flex items-center gap-6">
+          <nav className="flex items-center gap-1">
             {tabs.map((t) => {
               const isActive = active === t.href;
               return (
@@ -33,32 +37,36 @@ export function TopNav({ active = '/' }: { active?: string }) {
                   key={t.href}
                   href={t.href}
                   className={cn(
-                    'relative pb-3.5 pt-3.5 text-base transition-colors',
+                    'relative rounded-md px-3 py-1.5 text-base transition-colors duration-180',
                     isActive
-                      ? 'font-semibold text-ink-900'
-                      : 'font-medium text-ink-600 hover:text-ink-900'
+                      ? 'font-semibold text-text bg-surface'
+                      : 'font-medium text-text-muted hover:text-text hover:bg-surface-hover'
                   )}
                 >
                   {t.label}
                   {isActive && (
-                    <span className="absolute inset-x-0 -bottom-px h-[2px] bg-ink-900" />
+                    <span
+                      aria-hidden
+                      className="absolute inset-x-3 -bottom-px h-[2px] rounded-full bg-brand"
+                    />
                   )}
                 </Link>
               );
             })}
           </nav>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {isConnected && bal && (
-            <div className="hidden items-center gap-2 rounded-md border border-ink-200 px-3 py-1.5 sm:flex">
-              <span className="label text-ink-400">USDC</span>
-              <span className="num text-sm font-semibold text-ink-900">
+            <div className="hidden items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 sm:flex">
+              <span className="label text-text-dim">USDC</span>
+              <span className="num text-sm font-semibold text-text">
                 {Number(bal.formatted).toLocaleString('en-US', {
                   maximumFractionDigits: 2,
                 })}
               </span>
             </div>
           )}
+          <ThemeToggle />
           <ConnectButton
             chainStatus="icon"
             accountStatus={{ smallScreen: 'avatar', largeScreen: 'address' }}

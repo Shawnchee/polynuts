@@ -1,46 +1,41 @@
 'use client';
 
 import { useAppStore } from '@/store/app';
-import { useMarketData } from '@/lib/sdk/useOrders';
-import { DirectionTag } from '@/components/ui/DirectionTag';
+import { cn } from '@/lib/utils';
 
 export function Sidebar() {
   const activity = useAppStore((s) => s.activity);
   const livePrices = useAppStore((s) => s.prices);
-  const { data: marketData } = useMarketData();
-
-  const eth = livePrices.ETH ?? marketData?.prices?.ETH;
-  const btc = livePrices.BTC ?? marketData?.prices?.BTC;
 
   return (
-    <aside className="flex w-[280px] shrink-0 flex-col gap-4">
-      <PriceTickers eth={eth} btc={btc} />
-      <Panel title="Live Activity">
+    <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-[280px]">
+      <PriceTickers eth={livePrices.ETH} btc={livePrices.BTC} />
+      <Panel title="Live Activity" subtitle="On-chain fills">
         <div className="scrollbar-thin max-h-[420px] overflow-y-auto">
           {activity.length === 0 ? (
-            <Empty msg="No activity yet — place a bet to start the feed." />
+            <Empty msg="Place a bet to start the feed." />
           ) : (
-            <ul className="divide-y divide-ink-200">
+            <ul className="divide-y divide-line">
               {activity.map((item) => (
                 <li
                   key={item.id}
-                  className="flex items-center justify-between gap-2 px-3 py-2 text-sm animate-fade-in"
+                  className="flex animate-fade-in items-center justify-between gap-2 px-3 py-2 text-sm"
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     <span
-                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{
-                        background:
-                          item.direction === 'PUMP'
-                            ? '#16A34A'
-                            : item.direction === 'DUMP'
-                            ? '#DC2626'
-                            : '#7C3AED',
-                      }}
+                      className={cn(
+                        'h-1.5 w-1.5 shrink-0 rounded-full',
+                        item.direction === 'PUMP' && 'bg-pump',
+                        item.direction === 'DUMP' && 'bg-dump',
+                        item.direction === 'RANGE' && 'bg-range',
+                        !item.direction && 'bg-text-dim'
+                      )}
                     />
-                    <span className="truncate text-ink-900">{item.question ?? 'New market'}</span>
+                    <span className="truncate text-text">
+                      {item.question ?? 'Order update'}
+                    </span>
                   </div>
-                  <span className="num shrink-0 text-xs text-ink-400">
+                  <span className="num shrink-0 text-xs text-text-dim">
                     {agoLabel(item.ts)}
                   </span>
                 </li>
@@ -49,19 +44,24 @@ export function Sidebar() {
           )}
         </div>
       </Panel>
-
-      <Panel title="Top Traders · This Week">
-        <Empty msg="Leaderboard will populate as fills land." />
-      </Panel>
     </aside>
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="rounded-lg border border-ink-200 bg-white">
-      <div className="flex items-center justify-between border-b border-ink-200 px-3 py-2">
-        <span className="label text-ink-600">{title}</span>
+    <div className="overflow-hidden rounded-xl border border-line bg-bg-elev">
+      <div className="flex items-center justify-between border-b border-line px-3 py-2.5">
+        <span className="label text-text-muted">{title}</span>
+        {subtitle && <span className="text-xs text-text-dim">{subtitle}</span>}
       </div>
       {children}
     </div>
@@ -69,7 +69,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 }
 
 function Empty({ msg }: { msg: string }) {
-  return <p className="px-3 py-6 text-center text-sm text-ink-400">{msg}</p>;
+  return <p className="px-3 py-8 text-center text-sm text-text-dim">{msg}</p>;
 }
 
 function PriceTickers({ eth, btc }: { eth?: number; btc?: number }) {
@@ -83,9 +83,9 @@ function PriceTickers({ eth, btc }: { eth?: number; btc?: number }) {
 
 function PriceTicker({ symbol, price }: { symbol: string; price?: number }) {
   return (
-    <div className="rounded-lg border border-ink-200 bg-white px-3 py-2">
-      <div className="label text-ink-400">{symbol}</div>
-      <div className="num mt-0.5 text-md font-bold tabular-nums text-ink-900">
+    <div className="rounded-xl border border-line bg-bg-elev px-3 py-2.5 transition-colors duration-180 hover:bg-surface-hover">
+      <div className="label text-text-dim">{symbol}</div>
+      <div className="num mt-0.5 text-md font-bold tabular-nums text-text">
         {price !== undefined
           ? `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
           : '—'}

@@ -3,7 +3,11 @@
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
 import { PageShell } from '@/components/layout/PageShell';
-import { useLeaderboard, type LeaderboardPeriod, type LeaderboardRow } from '@/lib/sdk/useLeaderboard';
+import {
+  useLeaderboard,
+  type LeaderboardPeriod,
+  type LeaderboardRow,
+} from '@/lib/sdk/useLeaderboard';
 import { cn, shortAddress, fmtUsd } from '@/lib/utils';
 
 const periods: { id: LeaderboardPeriod; label: string }[] = [
@@ -24,17 +28,17 @@ export default function LeaderboardPage() {
     <PageShell active="/leaderboard">
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-bold text-ink-900">Leaderboard</h1>
-          <div className="flex items-center gap-1 rounded-md border border-ink-200 bg-white p-1">
+          <h1 className="text-xl font-bold text-text">Leaderboard</h1>
+          <div className="flex items-center gap-1 rounded-md border border-line bg-bg-elev p-1">
             {periods.map((p) => (
               <button
                 key={p.id}
                 onClick={() => setPeriod(p.id)}
                 className={cn(
-                  'rounded-sm px-3 py-1.5 text-sm font-medium transition-colors',
+                  'press-scale rounded-sm px-3 py-1.5 text-sm font-medium transition-all duration-180',
                   period === p.id
-                    ? 'bg-ink-900 text-white'
-                    : 'text-ink-600 hover:text-ink-900'
+                    ? 'bg-text text-bg-elev'
+                    : 'text-text-muted hover:text-text'
                 )}
               >
                 {p.label}
@@ -43,28 +47,28 @@ export default function LeaderboardPage() {
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-lg border border-ink-200 bg-white">
-          <div className="grid grid-cols-[64px_1fr_120px_140px_120px] items-center border-b border-ink-200 bg-ink-50 px-4 py-2.5 text-left">
-            <span className="label text-ink-600">Rank</span>
-            <span className="label text-ink-600">Trader</span>
-            <span className="label text-right text-ink-600">Fills</span>
-            <span className="label text-right text-ink-600">Notional</span>
-            <span className="label text-right text-ink-600">Badge</span>
+        <section className="overflow-hidden rounded-xl border border-line bg-bg-elev">
+          <div className="grid grid-cols-[64px_1fr_120px_140px_120px] items-center border-b border-line bg-bg-subtle px-4 py-2.5 text-left">
+            <span className="label text-text-muted">Rank</span>
+            <span className="label text-text-muted">Trader</span>
+            <span className="label text-right text-text-muted">Fills</span>
+            <span className="label text-right text-text-muted">Notional</span>
+            <span className="label text-right text-text-muted">Badge</span>
           </div>
 
           {isLoading && <Loading />}
           {error != null && (
-            <div className="px-4 py-12 text-center text-sm text-dump">
+            <div className="px-4 py-12 text-center text-sm text-dump dark:text-dump-dark">
               Couldn&apos;t fetch on-chain fills — RPC rate-limited or unreachable.
             </div>
           )}
           {!isLoading && !error && rows.length === 0 && (
-            <div className="px-4 py-12 text-center text-sm text-ink-400">
+            <div className="px-4 py-12 text-center text-sm text-text-dim">
               No fills in this window yet — be the first.
             </div>
           )}
           {!isLoading && !error && rows.length > 0 && (
-            <ul className="divide-y divide-ink-200">
+            <ul className="divide-y divide-line">
               {rows.map((row, i) => (
                 <Row
                   key={row.address}
@@ -77,7 +81,7 @@ export default function LeaderboardPage() {
           )}
 
           {myAddr && myIdx === -1 && !isLoading && (
-            <div className="border-t border-ink-200 bg-brand-light px-4 py-3 text-sm text-ink-600">
+            <div className="border-t border-line bg-brand/10 px-4 py-3 text-sm text-text-muted">
               You haven&apos;t placed a fill in this window yet.
             </div>
           )}
@@ -101,30 +105,26 @@ function Row({
   return (
     <li
       className={cn(
-        'grid grid-cols-[64px_1fr_120px_140px_120px] items-center px-4 py-3',
-        isMe && 'bg-brand-light'
+        'grid animate-fade-in grid-cols-[64px_1fr_120px_140px_120px] items-center px-4 py-3 transition-colors duration-180',
+        isMe ? 'bg-brand/10' : 'hover:bg-surface-hover'
       )}
     >
-      <span className="num text-md font-bold tabular-nums text-ink-900">
-        {rank <= 3 ? medal(rank) : `#${rank}`}
-      </span>
-      <span className="num text-sm text-ink-900">
+      <span className="num text-md font-bold tabular-nums text-text">#{rank}</span>
+      <span className="num text-sm text-text">
         {shortAddress(row.address)}
         {isMe && (
-          <span className="ml-2 rounded-sm bg-brand px-1.5 py-0.5 text-xs uppercase text-white">
+          <span className="ml-2 rounded-md bg-brand px-1.5 py-0.5 text-xs uppercase text-white">
             you
           </span>
         )}
       </span>
-      <span className="num text-right text-sm tabular-nums text-ink-900">
-        {row.fills}
-      </span>
-      <span className="num text-right text-sm font-semibold tabular-nums text-ink-900">
+      <span className="num text-right text-sm tabular-nums text-text">{row.fills}</span>
+      <span className="num text-right text-sm font-semibold tabular-nums text-text">
         {fmtUsd(notional, { compact: true })}
       </span>
       <span className="text-right text-xs">
         {badge && (
-          <span className="inline-block rounded-sm bg-ink-100 px-2 py-0.5 uppercase text-ink-600">
+          <span className="inline-block rounded-md bg-bg-subtle px-2 py-0.5 uppercase text-text-muted">
             {badge}
           </span>
         )}
@@ -142,26 +142,19 @@ function inferBadge(rank: number, row: LeaderboardRow): string | null {
   return null;
 }
 
-function medal(rank: number): string {
-  if (rank === 1) return '#1';
-  if (rank === 2) return '#2';
-  if (rank === 3) return '#3';
-  return `#${rank}`;
-}
-
 function Loading() {
   return (
-    <ul className="divide-y divide-ink-200">
+    <ul className="divide-y divide-line">
       {Array.from({ length: 8 }).map((_, i) => (
         <li
           key={i}
           className="grid grid-cols-[64px_1fr_120px_140px_120px] items-center px-4 py-4"
         >
-          <div className="h-3 w-8 animate-pulse rounded bg-ink-200" />
-          <div className="h-3 w-32 animate-pulse rounded bg-ink-200" />
-          <div className="h-3 w-12 animate-pulse rounded bg-ink-200 justify-self-end" />
-          <div className="h-3 w-20 animate-pulse rounded bg-ink-200 justify-self-end" />
-          <div className="h-3 w-14 animate-pulse rounded bg-ink-200 justify-self-end" />
+          <div className="h-3 w-8 animate-pulse rounded bg-bg-subtle" />
+          <div className="h-3 w-32 animate-pulse rounded bg-bg-subtle" />
+          <div className="h-3 w-12 animate-pulse rounded bg-bg-subtle justify-self-end" />
+          <div className="h-3 w-20 animate-pulse rounded bg-bg-subtle justify-self-end" />
+          <div className="h-3 w-14 animate-pulse rounded bg-bg-subtle justify-self-end" />
         </li>
       ))}
     </ul>

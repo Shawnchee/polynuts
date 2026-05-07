@@ -5,8 +5,8 @@ export function PnlPill({ amount, digits = 2 }: { amount: number; digits?: numbe
   return (
     <span
       className={cn(
-        'num tabular-nums font-semibold',
-        positive ? 'text-pump' : 'text-dump'
+        'num font-semibold tabular-nums',
+        positive ? 'text-pump dark:text-pump-dark' : 'text-dump dark:text-dump-dark'
       )}
     >
       {positive ? '+' : ''}
