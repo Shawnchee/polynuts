@@ -9,9 +9,15 @@ export type Direction = 'PUMP' | 'DUMP' | 'RANGE';
 
 /**
  * Per-implementation product family used for pricing and UI framing.
- * - 'vanilla' has unbounded payoff vs. premium → no binary framing
- * - 'spread' / 'butterfly' / 'condor' / 'iron_condor' / 'ranger' have a
- *   bounded max payout per contract → can be framed as YES/NO odds
+ *
+ * Note: `client.utils.getProductType(order)` only returns four strings —
+ * `'vanilla' | 'spread' | 'butterfly' | 'condor'` (utils.ts:752–773 in the
+ * SDK source) — so it folds RANGER and IRON_CONDOR under 'condor'. We need
+ * to distinguish them to (a) frame range markets correctly and (b) probe
+ * the right strikes when calling `client.option.simulatePayout`. The impl
+ * names themselves come from `chainConfig.optionImplementations[addr].name`,
+ * which IS sourced from the SDK chain registry — so this is "from the SDK"
+ * in the only sense available.
  */
 export type ProductFamily =
   | 'vanilla'
@@ -21,15 +27,6 @@ export type ProductFamily =
   | 'iron_condor'
   | 'ranger';
 
-export interface BinaryFraming {
-  /** Max payout per contract in 8-decimal collateral units. */
-  maxPayoutPerContract: bigint;
-  /** Multiplier on a winning bet — payout / premium per contract. */
-  multiplier: number;
-  /** Implied YES probability (0..1). 1 / multiplier, clamped. */
-  yesProbability: number;
-}
-
 export interface MarketView {
   id: string;
   order: OrderWithSignature;
@@ -38,19 +35,18 @@ export interface MarketView {
   question: string;
   structureName: string;
   family: ProductFamily;
-  /** strikes formatted as USD numbers (8-decimal converted) */
+  /** strikes formatted as USD numbers (8-decimal converted) — display only */
   strikes: number[];
+  /** strikes as bigints in 8-dec on-chain format, ascending — used by SDK calls */
+  strikesAsc: bigint[];
+  /** Implementation contract address — feed into client.option.simulatePayout */
+  implementation: string;
   expiry: number;
-  /** Premium per contract (8-decimal). Always set. */
+  /** Premium per contract (8-decimal). Comes directly from order.order.price. */
   pricePerContract: bigint;
-  /**
-   * Binary framing — null for vanilla calls/puts where payoff is unbounded.
-   * UI hides the odds bar / YES-NO pills when this is null.
-   */
-  binary: BinaryFraming | null;
   /** Max collateral usable for this order, in USDC units (6-decimal). */
   availableUsdc: bigint;
-  /** Underlying implementation name (`PUT_SPREAD`, `RANGER`, …) for analytics. */
+  /** Underlying SDK implementation name — analytics + debug */
   implName: string;
 }
 
@@ -83,6 +79,12 @@ const PUT_IMPL_NAMES = new Set([
 ]);
 const RANGE_IMPL_NAMES = new Set(['IRON_CONDOR', 'RANGER']);
 
+/**
+ * The SDK has no helper that returns 'PUMP' / 'DUMP' / 'RANGE' from an order
+ * (audited — `client.utils.isCall` / `isPut` only classify call vs put, not
+ * spread direction or range). This impl-name lookup is the canonical
+ * Polynuts-side mapping.
+ */
 export function getDirectionFromImpl(implName: string): Direction | null {
   if (CALL_IMPL_NAMES.has(implName)) return 'PUMP';
   if (PUT_IMPL_NAMES.has(implName)) return 'DUMP';
@@ -97,6 +99,38 @@ function familyFromImpl(implName: string): ProductFamily {
   if (implName.endsWith('_FLY')) return 'butterfly';
   if (implName.endsWith('_SPREAD')) return 'spread';
   return 'vanilla';
+}
+
+/**
+ * Settlement prices to probe through `client.option.simulatePayout` to find
+ * the maximum payout per contract. Each family pays out maximally at known
+ * structural points:
+ *   - spread:    payout caps at the upper strike
+ *   - butterfly: peak at the middle strike
+ *   - condor / iron_condor / ranger: peak in the inner-strike band — probe
+ *     both inner strikes (strikes[1] and strikes[2] on ascending input) and
+ *     take the larger.
+ *
+ * Returns null for vanilla — vanilla payoff is unbounded.
+ */
+export function getProbePrices(
+  family: ProductFamily,
+  strikesAsc: bigint[]
+): bigint[] | null {
+  if (family === 'vanilla') return null;
+  if (family === 'spread') {
+    if (strikesAsc.length < 2) return null;
+    return [strikesAsc[strikesAsc.length - 1]];
+  }
+  if (family === 'butterfly') {
+    if (strikesAsc.length < 3) return null;
+    return [strikesAsc[1]];
+  }
+  if (family === 'condor' || family === 'iron_condor' || family === 'ranger') {
+    if (strikesAsc.length < 4) return null;
+    return [strikesAsc[1], strikesAsc[2]];
+  }
+  return null;
 }
 
 export function getAssetFromPriceFeed(
@@ -212,59 +246,6 @@ export function getStructureLabel(implName: string): string {
   }
 }
 
-/**
- * Compute the max payout per contract in 8-decimal collateral units.
- * Returns null for vanilla — vanilla payoff is unbounded relative to premium.
- *
- * Spread:           strikeWidth (always positive)
- * Butterfly:        min(mid - low, high - mid) on ascending strikes
- * Condor / Ranger:  min(s[1]-s[0], s[3]-s[2]) on ascending strikes (wing widths)
- */
-function computeMaxPayoutPerContract(
-  family: ProductFamily,
-  strikes: bigint[]
-): bigint | null {
-  if (family === 'vanilla') return null;
-  const sorted = [...strikes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-
-  if (family === 'spread') {
-    if (sorted.length < 2) return null;
-    return sorted[sorted.length - 1] - sorted[0];
-  }
-  if (family === 'butterfly') {
-    if (sorted.length < 3) return null;
-    const [low, mid, high] = sorted;
-    const left = mid - low;
-    const right = high - mid;
-    return left < right ? left : right;
-  }
-  if (family === 'condor' || family === 'iron_condor' || family === 'ranger') {
-    if (sorted.length < 4) return null;
-    const lowerWing = sorted[1] - sorted[0];
-    const upperWing = sorted[3] - sorted[2];
-    return lowerWing < upperWing ? lowerWing : upperWing;
-  }
-  return null;
-}
-
-function computeBinaryFraming(
-  family: ProductFamily,
-  strikes: bigint[],
-  pricePerContract: bigint
-): BinaryFraming | null {
-  if (family === 'vanilla') return null;
-  if (pricePerContract === 0n) return null;
-  const maxPayout = computeMaxPayoutPerContract(family, strikes);
-  if (maxPayout == null || maxPayout <= 0n) return null;
-
-  // Both maxPayout and pricePerContract are 8-decimal collateral units.
-  const multiplier = Number(maxPayout) / Number(pricePerContract);
-  if (!Number.isFinite(multiplier) || multiplier <= 1) return null;
-
-  const yesProbability = Math.min(0.99, Math.max(0.01, 1 / multiplier));
-  return { maxPayoutPerContract: maxPayout, multiplier, yesProbability };
-}
-
 export function buildMarketView(
   order: OrderWithSignature,
   config: ChainConfig
@@ -280,19 +261,16 @@ export function buildMarketView(
   if (direction == null) return null;
 
   const strikes = (raw.strikes ?? []).map((s) => BigInt(s));
+  const strikesAsc = [...strikes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const expirySec = raw.orderExpiryTimestamp;
   const asset = getAssetFromPriceFeed(config, raw.priceFeed);
-  const question = generateQuestion(asset, implInfo.name, strikes, expirySec);
+  const question = generateQuestion(asset, implInfo.name, strikesAsc, expirySec);
   const structureName = getStructureLabel(implInfo.name);
   const family = familyFromImpl(implInfo.name);
-  const binary = computeBinaryFraming(family, strikes, order.order.price);
 
-  // Odette lists multiple orders sharing the same maker+nonce when the maker
-  // re-signs the same option at different price/size tiers — observed live as
-  // ~300 collisions in 355 orders. The order signature is unique by
-  // construction, so use a short suffix of it for a guaranteed-unique id.
   const sigSuffix = order.signature.slice(-12);
   const id = `${order.order.maker}-${order.order.nonce.toString()}-${sigSuffix}`;
+
   let availableUsdc = 0n;
   try {
     availableUsdc = BigInt(raw.maxCollateralUsable);
@@ -308,10 +286,11 @@ export function buildMarketView(
     question,
     structureName,
     family,
-    strikes: strikes.map(strikeToUsd),
+    strikes: strikesAsc.map(strikeToUsd),
+    strikesAsc,
+    implementation: raw.implementation,
     expiry: expirySec,
     pricePerContract: order.order.price,
-    binary,
     availableUsdc,
     implName: implInfo.name,
   };

@@ -18,6 +18,7 @@ import type { MarketView } from '@/lib/sdk/markets';
 import { getReadClient } from '@/lib/sdk/clients';
 import { useSignerClient } from '@/lib/sdk/useSignerClient';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
+import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { DirectionTag } from '@/components/ui/DirectionTag';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
@@ -27,9 +28,6 @@ const SIZES = [5, 10, 25, 50, 100] as const;
 interface PreviewState {
   numContracts: bigint;
   pricePerContract: bigint;
-  /** Estimated gross "if win" payout in 6-decimal USDC. Null when binary framing is unavailable (vanilla). */
-  payoutUsdc: bigint | null;
-  multiplier: number | null;
 }
 
 export function TradePanel({ market }: { market: MarketView | null }) {
@@ -44,6 +42,14 @@ export function TradePanel({ market }: { market: MarketView | null }) {
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
+  // SDK-driven max payout for the binary framing (multiplier + implied odds)
+  const { data: binary } = useMarketBinaryFraming(market);
+  // SDK-driven realised payout for the actual numContracts being purchased.
+  // Calls client.option.simulatePayout under the hood — this is the exact
+  // amount the contract would pay out at the structural maximum, no
+  // homegrown decimal scaling.
+  const { data: payoutAtFill } = useFillPayout(market, preview?.numContracts ?? null);
+
   useEffect(() => {
     if (!market) {
       setPreview(null);
@@ -53,20 +59,9 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       try {
         const usdcAmount = toBigInt(String(amount), 6);
         const p = readClient.optionBook.previewFillOrder(market.order, usdcAmount);
-
-        // Compute "if win" payout from real on-chain semantics:
-        //   gross payout = numContracts × maxPayoutPerContract / 1e8  (in 6-dec USDC)
-        // Available only when the order has bounded payoff (binary framing).
-        let payoutUsdc: bigint | null = null;
-        if (market.binary) {
-          payoutUsdc = (p.numContracts * market.binary.maxPayoutPerContract) / 100_000_000n;
-        }
-
         setPreview({
           numContracts: p.numContracts,
           pricePerContract: p.pricePerContract,
-          payoutUsdc,
-          multiplier: market.binary?.multiplier ?? null,
         });
         setPreviewError(null);
       } catch (e: unknown) {
@@ -157,6 +152,14 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       ? 'bg-dump hover:bg-dump/90 glow-dump'
       : 'bg-range hover:bg-range/90 glow-range';
 
+  // simulatePayout returns 6-dec USDC directly — no scaling needed.
+  const payoutUsdcStr = payoutAtFill
+    ? `+$${Number(fromBigInt(payoutAtFill, 6)).toLocaleString('en-US', {
+        maximumFractionDigits: 2,
+      })}`
+    : null;
+  const isVanilla = market.family === 'vanilla';
+
   return (
     <div className="rounded-xl border border-line bg-bg-elev p-4 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -209,26 +212,20 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               : '—'
           }
         />
-        {preview?.payoutUsdc != null ? (
+        {!isVanilla ? (
           <>
             <SummaryRow
               label="If correct"
-              value={`+$${Number(fromBigInt(preview.payoutUsdc, 6)).toLocaleString('en-US', {
-                maximumFractionDigits: 2,
-              })}`}
-              highlight
+              value={payoutUsdcStr ?? '…'}
+              highlight={!!payoutUsdcStr}
             />
             <SummaryRow
               label="Return"
-              value={preview.multiplier ? `${preview.multiplier.toFixed(2)}x` : '—'}
+              value={binary?.multiplier ? `${binary.multiplier.toFixed(2)}x` : '…'}
             />
           </>
         ) : (
-          <SummaryRow
-            label="Payoff"
-            value="open-ended (vanilla option)"
-            mono={false}
-          />
+          <SummaryRow label="Payoff" value="open-ended (vanilla option)" mono={false} />
         )}
         <SummaryRow label="Structure" value={market.structureName} mono={false} />
         <SummaryRow

@@ -46,10 +46,20 @@ export const useAppStore = create<AppStore>((set) => ({
     set((s) => ({ prices: { ...s.prices, [asset]: price } })),
 }));
 
+/**
+ * Apply user-selected filter + sort to the markets list.
+ *
+ * The "payout" sort needs the SDK-derived multiplier which is fetched
+ * asynchronously per market via `useMarketBinaryFraming` — pass a
+ * resolver that reads from the React Query cache so sorting picks up
+ * the values as they land. Markets without a resolved multiplier sink
+ * to the bottom (treated as 0) so the highest-payout rows come first.
+ */
 export function applyFilterSort(
   markets: MarketView[],
   filter: FilterTab,
-  sort: SortKey
+  sort: SortKey,
+  getMultiplier?: (m: MarketView) => number | null
 ): MarketView[] {
   let out = [...markets];
 
@@ -75,7 +85,7 @@ export function applyFilterSort(
       break;
     case 'payout':
       out.sort(
-        (a, b) => (b.binary?.multiplier ?? 0) - (a.binary?.multiplier ?? 0)
+        (a, b) => (getMultiplier?.(b) ?? 0) - (getMultiplier?.(a) ?? 0)
       );
       break;
   }

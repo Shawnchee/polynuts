@@ -5,6 +5,7 @@ import { DirectionTag } from '@/components/ui/DirectionTag';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { OddsBar } from '@/components/ui/OddsBar';
 import { fmtUsd, cn } from '@/lib/utils';
+import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 
 const directionGlow: Record<MarketView['direction'], string> = {
   PUMP: 'glow-pump',
@@ -22,10 +23,12 @@ export function MarketCard({
   onSelect: (id: string) => void;
 }) {
   const volume = Number(market.availableUsdc) / 1e6;
-  const yesProb = market.binary?.yesProbability ?? null;
+  const { data: binary, isLoading: binaryLoading } = useMarketBinaryFraming(market);
+  const yesProb = binary?.yesProbability ?? null;
   const yesCents = yesProb != null ? Math.round(yesProb * 100) : null;
   const noCents = yesCents != null ? 100 - yesCents : null;
-  const multiplier = market.binary?.multiplier ?? null;
+  const multiplier = binary?.multiplier ?? null;
+  const isVanilla = market.family === 'vanilla';
 
   return (
     <button
@@ -38,7 +41,6 @@ export function MarketCard({
         selected && 'border-text ring-2 ring-text/8 ' + directionGlow[market.direction]
       )}
     >
-      {/* Selection accent line */}
       {selected && (
         <span
           aria-hidden
@@ -60,7 +62,14 @@ export function MarketCard({
         {market.question}
       </p>
 
-      {yesCents != null && noCents != null ? (
+      {isVanilla ? (
+        <div className="mt-4 flex items-center justify-between rounded-md border border-line bg-bg-subtle px-3 py-2">
+          <span className="label text-text-dim">Premium</span>
+          <span className="num text-base font-bold tabular-nums text-text">
+            {fmtUsd(Number(market.pricePerContract) / 1e8, { compact: true })}
+          </span>
+        </div>
+      ) : binary && yesCents != null && noCents != null ? (
         <>
           <div className="mt-4 grid grid-cols-2 gap-2">
             <PillOdds label="YES" cents={yesCents} active="pump" />
@@ -71,12 +80,9 @@ export function MarketCard({
           </div>
         </>
       ) : (
-        // Vanilla — no binary framing; show structure + premium instead
-        <div className="mt-4 flex items-center justify-between rounded-md border border-line bg-bg-subtle px-3 py-2">
-          <span className="label text-text-dim">Premium</span>
-          <span className="num text-base font-bold tabular-nums text-text">
-            {fmtUsd(Number(market.pricePerContract) / 1e8, { compact: true })}
-          </span>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <OddsSkeleton loading={binaryLoading} />
+          <OddsSkeleton loading={binaryLoading} />
         </div>
       )}
 
@@ -91,9 +97,9 @@ export function MarketCard({
           <span
             className={cn(
               'num rounded-full border px-2 py-0.5 text-xs font-bold tabular-nums',
-              market.direction === 'PUMP' && 'border-pump/30 text-pump',
-              market.direction === 'DUMP' && 'border-dump/30 text-dump',
-              market.direction === 'RANGE' && 'border-range/30 text-range'
+              market.direction === 'PUMP' && 'border-pump/30 text-pump dark:text-pump-dark',
+              market.direction === 'DUMP' && 'border-dump/30 text-dump dark:text-dump-dark',
+              market.direction === 'RANGE' && 'border-range/30 text-range dark:text-range-dark'
             )}
           >
             {multiplier.toFixed(2)}x
@@ -130,6 +136,20 @@ function PillOdds({
     >
       <span className="label">{label}</span>
       <span className="num text-base font-bold tabular-nums">{cents}¢</span>
+    </div>
+  );
+}
+
+function OddsSkeleton({ loading }: { loading: boolean }) {
+  return (
+    <div
+      className={cn(
+        'relative flex h-9 items-center justify-between overflow-hidden rounded-md border border-line bg-bg-subtle px-2.5'
+      )}
+    >
+      {loading && (
+        <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-surface-hover to-transparent" />
+      )}
     </div>
   );
 }

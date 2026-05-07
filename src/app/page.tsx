@@ -7,6 +7,7 @@ import { MarketCard } from '@/components/markets/MarketCard';
 import { Sidebar } from '@/components/markets/Sidebar';
 import { TradePanel } from '@/components/trade/TradePanel';
 import { useMarkets } from '@/lib/sdk/useOrders';
+import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
 import { useAppStore, applyFilterSort } from '@/store/app';
 import { cn } from '@/lib/utils';
 
@@ -17,9 +18,22 @@ export default function MarketsPage() {
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
 
+  // SDK on-chain payout sims, deduped per (impl, strikes) by React Query.
+  // Drives both the highest-payout sort and the multiplier badge in cards.
+  const binaries = useMarketBinaryFramings(markets);
+  const multiplierByMarket = useMemo(() => {
+    const m = new Map<string, number>();
+    markets.forEach((mkt, i) => {
+      const v = binaries[i]?.data?.multiplier;
+      if (typeof v === 'number') m.set(mkt.id, v);
+    });
+    return m;
+  }, [markets, binaries]);
+
   const filtered = useMemo(
-    () => applyFilterSort(markets, filter, sort),
-    [markets, filter, sort]
+    () =>
+      applyFilterSort(markets, filter, sort, (m) => multiplierByMarket.get(m.id) ?? null),
+    [markets, filter, sort, multiplierByMarket]
   );
 
   const selectedMarket =
