@@ -7,30 +7,53 @@ import { fromBigInt } from '@thetanuts-finance/thetanuts-client';
 
 export type Direction = 'PUMP' | 'DUMP' | 'RANGE';
 
+/**
+ * Per-implementation product family used for pricing and UI framing.
+ * - 'vanilla' has unbounded payoff vs. premium → no binary framing
+ * - 'spread' / 'butterfly' / 'condor' / 'iron_condor' / 'ranger' have a
+ *   bounded max payout per contract → can be framed as YES/NO odds
+ */
+export type ProductFamily =
+  | 'vanilla'
+  | 'spread'
+  | 'butterfly'
+  | 'condor'
+  | 'iron_condor'
+  | 'ranger';
+
+export interface BinaryFraming {
+  /** Max payout per contract in 8-decimal collateral units. */
+  maxPayoutPerContract: bigint;
+  /** Multiplier on a winning bet — payout / premium per contract. */
+  multiplier: number;
+  /** Implied YES probability (0..1). 1 / multiplier, clamped. */
+  yesProbability: number;
+}
+
 export interface MarketView {
-  /** unique key (maker + nonce) */
   id: string;
   order: OrderWithSignature;
   asset: 'ETH' | 'BTC' | string;
   direction: Direction;
   question: string;
   structureName: string;
+  family: ProductFamily;
   /** strikes formatted as USD numbers (8-decimal converted) */
   strikes: number[];
   expiry: number;
-  /** human-readable price per contract in collateral units */
+  /** Premium per contract (8-decimal). Always set. */
   pricePerContract: bigint;
-  /** payout multiplier on a winning bet, derived from price (8 dec) */
-  multiplier: number;
-  /** implied YES probability (0..1) */
-  yesProbability: number;
-  /** max collateral usable */
+  /**
+   * Binary framing — null for vanilla calls/puts where payoff is unbounded.
+   * UI hides the odds bar / YES-NO pills when this is null.
+   */
+  binary: BinaryFraming | null;
+  /** Max collateral usable for this order, in USDC units (6-decimal). */
   availableUsdc: bigint;
+  /** Underlying implementation name (`PUT_SPREAD`, `RANGER`, …) for analytics. */
+  implName: string;
 }
 
-/** Cash-settled implementation types we surface as Polynuts markets.
- *  Physical-settled and RFQ-only types are excluded — they aren't fillable
- *  via OptionBook.fillOrder and would only lead to confused users. */
 export const SUPPORTED_IMPLS = new Set([
   'PUT',
   'INVERSE_CALL',
@@ -42,6 +65,7 @@ export const SUPPORTED_IMPLS = new Set([
   'CALL_CONDOR',
   'PUT_CONDOR',
   'IRON_CONDOR',
+  'RANGER',
 ]);
 
 const CALL_IMPL_NAMES = new Set([
@@ -57,13 +81,22 @@ const PUT_IMPL_NAMES = new Set([
   'PUT_FLY',
   'PUT_CONDOR',
 ]);
-const RANGE_IMPL_NAMES = new Set(['IRON_CONDOR']);
+const RANGE_IMPL_NAMES = new Set(['IRON_CONDOR', 'RANGER']);
 
-export function getDirectionFromImpl(implName: string): Direction {
+export function getDirectionFromImpl(implName: string): Direction | null {
   if (CALL_IMPL_NAMES.has(implName)) return 'PUMP';
   if (PUT_IMPL_NAMES.has(implName)) return 'DUMP';
   if (RANGE_IMPL_NAMES.has(implName)) return 'RANGE';
-  return 'RANGE';
+  return null;
+}
+
+function familyFromImpl(implName: string): ProductFamily {
+  if (implName === 'IRON_CONDOR') return 'iron_condor';
+  if (implName === 'RANGER') return 'ranger';
+  if (implName.endsWith('_CONDOR')) return 'condor';
+  if (implName.endsWith('_FLY')) return 'butterfly';
+  if (implName.endsWith('_SPREAD')) return 'spread';
+  return 'vanilla';
 }
 
 export function getAssetFromPriceFeed(
@@ -78,7 +111,6 @@ export function getAssetFromPriceFeed(
 }
 
 function normalizeAsset(symbol: string): string {
-  // ETH/USD → ETH · BTC/USD → BTC · already-clean symbols pass through
   return symbol.replace(/[\/_-]?USD$/i, '');
 }
 
@@ -118,7 +150,6 @@ export function generateQuestion(
   expirySec: number
 ): string {
   const time = fmtExpiry(expirySec);
-  const dir = getDirectionFromImpl(implName);
 
   if (implName === 'INVERSE_CALL' || implName === 'LINEAR_CALL') {
     return `Will ${asset} close above ${fmtStrike(strikes[0])} by ${time}?`;
@@ -133,7 +164,8 @@ export function generateQuestion(
     return `Will ${asset} drop below ${fmtStrike(strikes[0])} by ${time}?`;
   }
   if (implName === 'CALL_FLY' || implName === 'PUT_FLY') {
-    const mid = strikes[Math.floor(strikes.length / 2)];
+    const sorted = [...strikes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const mid = sorted[Math.floor(sorted.length / 2)];
     return `Will ${asset} land near ${fmtStrike(mid)} by ${time}?`;
   }
   if (
@@ -143,15 +175,13 @@ export function generateQuestion(
     implName === 'RANGER'
   ) {
     if (strikes.length >= 4) {
-      const low = fmtStrike(strikes[1]);
-      const high = fmtStrike(strikes[2]);
+      const sorted = [...strikes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      const low = fmtStrike(sorted[1]);
+      const high = fmtStrike(sorted[2]);
       return `Will ${asset} stay between ${low}–${high} by ${time}?`;
     }
   }
-
-  if (dir === 'PUMP') return `Will ${asset} pump by ${time}?`;
-  if (dir === 'DUMP') return `Will ${asset} dump by ${time}?`;
-  return `Will ${asset} stay in range by ${time}?`;
+  return `${asset} bet — expires ${time}`;
 }
 
 export function getStructureLabel(implName: string): string {
@@ -183,43 +213,56 @@ export function getStructureLabel(implName: string): string {
 }
 
 /**
- * For "binary" framing: payout multiplier ≈ maxSpread / pricePerContract
- * (caller pays `price` USDC per contract, can win up to maxSpread USDC.)
+ * Compute the max payout per contract in 8-decimal collateral units.
+ * Returns null for vanilla — vanilla payoff is unbounded relative to premium.
  *
- * For vanilla call/put we use the strike or 1e18 reference — since these
- * orders trade in non-binary fashion, we surface multiplier as a hint only.
+ * Spread:           strikeWidth (always positive)
+ * Butterfly:        min(mid - low, high - mid) on ascending strikes
+ * Condor / Ranger:  min(s[1]-s[0], s[3]-s[2]) on ascending strikes (wing widths)
  */
-function computeMultiplier(
-  implName: string,
+function computeMaxPayoutPerContract(
+  family: ProductFamily,
+  strikes: bigint[]
+): bigint | null {
+  if (family === 'vanilla') return null;
+  const sorted = [...strikes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+  if (family === 'spread') {
+    if (sorted.length < 2) return null;
+    return sorted[sorted.length - 1] - sorted[0];
+  }
+  if (family === 'butterfly') {
+    if (sorted.length < 3) return null;
+    const [low, mid, high] = sorted;
+    const left = mid - low;
+    const right = high - mid;
+    return left < right ? left : right;
+  }
+  if (family === 'condor' || family === 'iron_condor' || family === 'ranger') {
+    if (sorted.length < 4) return null;
+    const lowerWing = sorted[1] - sorted[0];
+    const upperWing = sorted[3] - sorted[2];
+    return lowerWing < upperWing ? lowerWing : upperWing;
+  }
+  return null;
+}
+
+function computeBinaryFraming(
+  family: ProductFamily,
   strikes: bigint[],
   pricePerContract: bigint
-): number {
-  if (pricePerContract === 0n) return 0;
+): BinaryFraming | null {
+  if (family === 'vanilla') return null;
+  if (pricePerContract === 0n) return null;
+  const maxPayout = computeMaxPayoutPerContract(family, strikes);
+  if (maxPayout == null || maxPayout <= 0n) return null;
 
-  // For spreads/condors maxPayout = widest spread (in 8 decimals)
-  if (implName === 'CALL_SPREAD' || implName === 'PUT_SPREAD') {
-    if (strikes.length < 2) return 0;
-    const spread = strikes[0] > strikes[1] ? strikes[0] - strikes[1] : strikes[1] - strikes[0];
-    return Number(spread) / Number(pricePerContract);
-  }
-  if (
-    implName === 'CALL_CONDOR' ||
-    implName === 'PUT_CONDOR' ||
-    implName === 'IRON_CONDOR' ||
-    implName === 'CALL_FLY' ||
-    implName === 'PUT_FLY'
-  ) {
-    if (strikes.length < 2) return 0;
-    const sorted = [...strikes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    const span = sorted[sorted.length - 1] - sorted[0];
-    const half = span / 2n;
-    return Number(half) / Number(pricePerContract);
-  }
-  // Vanilla — multiplier loosely = strike / price
-  if (strikes.length > 0) {
-    return Number(strikes[0]) / Number(pricePerContract);
-  }
-  return 0;
+  // Both maxPayout and pricePerContract are 8-decimal collateral units.
+  const multiplier = Number(maxPayout) / Number(pricePerContract);
+  if (!Number.isFinite(multiplier) || multiplier <= 1) return null;
+
+  const yesProbability = Math.min(0.99, Math.max(0.01, 1 / multiplier));
+  return { maxPayoutPerContract: maxPayout, multiplier, yesProbability };
 }
 
 export function buildMarketView(
@@ -233,18 +276,18 @@ export function buildMarketView(
   if (!implInfo) return null;
   if (!SUPPORTED_IMPLS.has(implInfo.name)) return null;
 
+  const direction = getDirectionFromImpl(implInfo.name);
+  if (direction == null) return null;
+
   const strikes = (raw.strikes ?? []).map((s) => BigInt(s));
   const expirySec = raw.orderExpiryTimestamp;
   const asset = getAssetFromPriceFeed(config, raw.priceFeed);
-  const direction = getDirectionFromImpl(implInfo.name);
   const question = generateQuestion(asset, implInfo.name, strikes, expirySec);
   const structureName = getStructureLabel(implInfo.name);
-  const multiplier = computeMultiplier(implInfo.name, strikes, order.order.price);
-  // implied probability that YES pays out, capped 0..0.99
-  const yesProbability = multiplier > 0 ? Math.min(0.99, Math.max(0.01, 1 / multiplier)) : 0.5;
+  const family = familyFromImpl(implInfo.name);
+  const binary = computeBinaryFraming(family, strikes, order.order.price);
 
   const id = `${order.order.maker}-${order.order.nonce.toString()}`;
-
   let availableUsdc = 0n;
   try {
     availableUsdc = BigInt(raw.maxCollateralUsable);
@@ -259,12 +302,13 @@ export function buildMarketView(
     direction,
     question,
     structureName,
+    family,
     strikes: strikes.map(strikeToUsd),
     expiry: expirySec,
     pricePerContract: order.order.price,
-    multiplier,
-    yesProbability,
+    binary,
     availableUsdc,
+    implName: implInfo.name,
   };
 }
 

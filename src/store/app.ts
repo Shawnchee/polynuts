@@ -74,7 +74,9 @@ export function applyFilterSort(
       out.sort((a, b) => a.expiry - b.expiry);
       break;
     case 'payout':
-      out.sort((a, b) => b.multiplier - a.multiplier);
+      out.sort(
+        (a, b) => (b.binary?.multiplier ?? 0) - (a.binary?.multiplier ?? 0)
+      );
       break;
   }
 

@@ -24,24 +24,24 @@ import { cn } from '@/lib/utils';
 
 const SIZES = [5, 10, 25, 50, 100] as const;
 
+interface PreviewState {
+  numContracts: bigint;
+  pricePerContract: bigint;
+  /** Estimated gross "if win" payout in 6-decimal USDC. Null when binary framing is unavailable (vanilla). */
+  payoutUsdc: bigint | null;
+  multiplier: number | null;
+}
+
 export function TradePanel({ market }: { market: MarketView | null }) {
   const [amount, setAmount] = useState<number>(10);
   const { isConnected } = useAccount();
   const { signerClient } = useSignerClient();
   const { data: balance } = useUsdcBalance();
   const prependActivity = useAppStore((s) => s.prependActivity);
-
   const [submitting, setSubmitting] = useState(false);
 
   const readClient = getReadClient();
-
-  // Recompute preview when amount changes (debounced)
-  const [preview, setPreview] = useState<{
-    numContracts: bigint;
-    pricePerContract: bigint;
-    multiplier: number;
-    payout: bigint;
-  } | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,14 +53,20 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       try {
         const usdcAmount = toBigInt(String(amount), 6);
         const p = readClient.optionBook.previewFillOrder(market.order, usdcAmount);
-        // Approximate "win" payout for binary framing
-        const m = market.multiplier;
-        const payout = BigInt(Math.round(amount * m * 1_000_000));
+
+        // Compute "if win" payout from real on-chain semantics:
+        //   gross payout = numContracts × maxPayoutPerContract / 1e8  (in 6-dec USDC)
+        // Available only when the order has bounded payoff (binary framing).
+        let payoutUsdc: bigint | null = null;
+        if (market.binary) {
+          payoutUsdc = (p.numContracts * market.binary.maxPayoutPerContract) / 100_000_000n;
+        }
+
         setPreview({
           numContracts: p.numContracts,
           pricePerContract: p.pricePerContract,
-          multiplier: m,
-          payout,
+          payoutUsdc,
+          multiplier: market.binary?.multiplier ?? null,
         });
         setPreviewError(null);
       } catch (e: unknown) {
@@ -82,8 +88,8 @@ export function TradePanel({ market }: { market: MarketView | null }) {
 
   if (!market) {
     return (
-      <div className="rounded-lg border border-ink-200 bg-white p-6">
-        <p className="text-sm text-ink-400">Select a market to place a bet.</p>
+      <div className="rounded-xl border border-line bg-bg-elev p-6 animate-fade-in">
+        <p className="text-sm text-text-dim">Select a market to place a bet.</p>
       </div>
     );
   }
@@ -97,14 +103,11 @@ export function TradePanel({ market }: { market: MarketView | null }) {
     const t = toast.loading('Placing your bet…');
     try {
       const usdcAmount = toBigInt(String(amount), 6);
-
-      // 1. Ensure allowance
       const usdcAddr = signerClient.chainConfig.tokens.USDC.address;
       const optionBook = signerClient.chainConfig.contracts.optionBook;
       if (!optionBook) throw new Error('OptionBook not deployed on this chain');
-      await signerClient.erc20.ensureAllowance(usdcAddr, optionBook, usdcAmount);
 
-      // 2. Fill
+      await signerClient.erc20.ensureAllowance(usdcAddr, optionBook, usdcAmount);
       const receipt = await signerClient.optionBook.fillOrder(market.order, usdcAmount);
 
       const explorer = signerClient.chainConfig.explorerUrl;
@@ -116,12 +119,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       toast.success(
         <span>
           Bet placed!{' '}
-          <a
-            className="text-brand underline"
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className="text-brand underline" href={url} target="_blank" rel="noreferrer">
             View on Basescan
           </a>
         </span>,
@@ -134,7 +132,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         kind: 'filled',
         asset: market.asset,
         direction: market.direction,
-        question: `${market.direction} · $${amount}`,
+        question: `${market.direction} · $${amount} · ${market.asset}`,
       });
     } catch (err: unknown) {
       let msg = 'Transaction failed';
@@ -154,34 +152,32 @@ export function TradePanel({ market }: { market: MarketView | null }) {
 
   const dirCls =
     market.direction === 'PUMP'
-      ? 'bg-pump hover:bg-pump/90'
+      ? 'bg-pump hover:bg-pump/90 glow-pump'
       : market.direction === 'DUMP'
-      ? 'bg-dump hover:bg-dump/90'
-      : 'bg-range hover:bg-range/90';
+      ? 'bg-dump hover:bg-dump/90 glow-dump'
+      : 'bg-range hover:bg-range/90 glow-range';
 
   return (
-    <div className="rounded-lg border border-ink-200 bg-white p-4">
+    <div className="rounded-xl border border-line bg-bg-elev p-4 animate-fade-in">
       <div className="flex items-center justify-between">
-        <h3 className="text-md font-semibold text-ink-900">Place Your Bet</h3>
+        <h3 className="text-md font-semibold text-text">Place Your Bet</h3>
         <DirectionTag direction={market.direction} />
       </div>
 
-      <p className="mt-3 text-base font-medium leading-snug text-ink-900">
-        {market.question}
-      </p>
+      <p className="mt-3 text-base font-medium leading-snug text-text">{market.question}</p>
 
       <div className="mt-4">
-        <div className="label text-ink-400">Amount</div>
+        <div className="label text-text-dim">Amount</div>
         <div className="mt-2 grid grid-cols-5 gap-1.5">
           {SIZES.map((s) => (
             <button
               key={s}
               onClick={() => setAmount(s)}
               className={cn(
-                'rounded-md border px-1 py-2 text-sm font-medium transition-colors num tabular-nums',
+                'press-scale rounded-md border px-1 py-2 text-sm font-medium tabular-nums num transition-colors duration-120',
                 amount === s
-                  ? 'border-ink-900 bg-ink-900 text-white'
-                  : 'border-ink-200 text-ink-900 hover:border-ink-400'
+                  ? 'border-text bg-text text-bg-elev'
+                  : 'border-line text-text hover:border-text-dim hover:bg-surface-hover'
               )}
             >
               ${s}
@@ -189,19 +185,19 @@ export function TradePanel({ market }: { market: MarketView | null }) {
           ))}
         </div>
         <div className="mt-2 flex items-center gap-2">
-          <span className="label text-ink-400">Custom</span>
+          <span className="label text-text-dim">Custom</span>
           <input
             type="number"
             min={1}
             step={1}
             value={amount}
             onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 0))}
-            className="w-full rounded-md border border-ink-200 bg-white px-2 py-1.5 num text-sm tabular-nums text-ink-900 focus:border-brand"
+            className="w-full rounded-md border border-line bg-surface px-2 py-1.5 num text-sm tabular-nums text-text focus:border-brand"
           />
         </div>
       </div>
 
-      <div className="mt-4 rounded-md bg-ink-100 p-3 space-y-1.5">
+      <div className="mt-4 space-y-1.5 rounded-md border border-line bg-bg-subtle p-3">
         <SummaryRow label="You bet" value={`$${amount} USDC`} />
         <SummaryRow
           label="Contracts"
@@ -213,31 +209,35 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               : '—'
           }
         />
-        <SummaryRow
-          label="If correct"
-          value={
-            preview
-              ? `+$${Number(fromBigInt(preview.payout, 6)).toLocaleString('en-US', {
-                  maximumFractionDigits: 2,
-                })}`
-              : '—'
-          }
-          highlight
-        />
-        <SummaryRow
-          label="Return"
-          value={preview ? `${preview.multiplier.toFixed(2)}x` : '—'}
-        />
-        <SummaryRow label="Structure" value={market.structureName} />
+        {preview?.payoutUsdc != null ? (
+          <>
+            <SummaryRow
+              label="If correct"
+              value={`+$${Number(fromBigInt(preview.payoutUsdc, 6)).toLocaleString('en-US', {
+                maximumFractionDigits: 2,
+              })}`}
+              highlight
+            />
+            <SummaryRow
+              label="Return"
+              value={preview.multiplier ? `${preview.multiplier.toFixed(2)}x` : '—'}
+            />
+          </>
+        ) : (
+          <SummaryRow
+            label="Payoff"
+            value="open-ended (vanilla option)"
+            mono={false}
+          />
+        )}
+        <SummaryRow label="Structure" value={market.structureName} mono={false} />
         <SummaryRow
           label="Settles"
           value={new Date(market.expiry * 1000).toUTCString().slice(17, 22) + ' UTC'}
         />
       </div>
 
-      {previewError && (
-        <p className="mt-2 text-sm text-dump">{previewError}</p>
-      )}
+      {previewError && <p className="mt-2 text-sm text-dump">{previewError}</p>}
 
       <div className="mt-4">
         {!isConnected ? (
@@ -245,7 +245,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
             {({ openConnectModal }) => (
               <button
                 onClick={openConnectModal}
-                className="w-full rounded-md bg-brand py-3 text-base font-semibold text-white transition-transform hover:bg-brand-dark active:scale-[0.98]"
+                className="press-scale w-full rounded-md bg-brand py-3 text-base font-semibold text-white transition-colors hover:bg-brand-dark glow-brand"
               >
                 Connect Wallet to Bet
               </button>
@@ -256,9 +256,10 @@ export function TradePanel({ market }: { market: MarketView | null }) {
             onClick={handleBet}
             disabled={submitting || insufficientBalance || !preview}
             className={cn(
-              'w-full rounded-md py-3 text-base font-semibold text-white transition-all active:scale-[0.98]',
+              'press-scale w-full rounded-md py-3 text-base font-semibold text-white transition-colors',
               dirCls,
-              (submitting || insufficientBalance || !preview) && 'cursor-not-allowed opacity-60'
+              (submitting || insufficientBalance || !preview) &&
+                'cursor-not-allowed opacity-60'
             )}
           >
             {submitting
@@ -270,9 +271,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         )}
       </div>
 
-      <p className="mt-3 text-center text-xs text-ink-400">
-        Powered by Thetanuts V4
-      </p>
+      <p className="mt-3 text-center text-xs text-text-dim">Powered by Thetanuts V4</p>
     </div>
   );
 }
@@ -281,18 +280,21 @@ function SummaryRow({
   label,
   value,
   highlight,
+  mono = true,
 }: {
   label: string;
   value: string;
   highlight?: boolean;
+  mono?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between text-sm">
-      <span className="text-ink-600">{label}</span>
+      <span className="text-text-muted">{label}</span>
       <span
         className={cn(
-          'num tabular-nums font-medium',
-          highlight ? 'text-pump font-bold' : 'text-ink-900'
+          'font-medium',
+          mono && 'num tabular-nums',
+          highlight ? 'text-pump font-bold' : 'text-text'
         )}
       >
         {value}
