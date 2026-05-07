@@ -11,8 +11,13 @@ import {
   InsufficientBalanceError,
   ContractRevertError,
   RateLimitError,
+  SlippageExceededError,
+  SignerRequiredError,
+  NetworkUnsupportedError,
+  InvalidParamsError,
   toBigInt,
   fromBigInt,
+  validateOrderExpiry,
 } from '@thetanuts-finance/thetanuts-client';
 import type { MarketView } from '@/lib/sdk/markets';
 import { getReadClient } from '@/lib/sdk/clients';
@@ -27,7 +32,13 @@ const SIZES = [5, 10, 25, 50, 100] as const;
 
 interface PreviewState {
   numContracts: bigint;
+  /** Maximum contracts the maker has signed for — caps user's bet */
+  maxContracts: bigint;
   pricePerContract: bigint;
+  /** Same currency as `numContracts × pricePerContract / 1e8`, in 6-dec USDC */
+  totalCollateral: bigint;
+  /** True when usdcAmount would have exceeded the cap and was clamped */
+  capped: boolean;
 }
 
 export function TradePanel({ market }: { market: MarketView | null }) {
@@ -59,9 +70,16 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       try {
         const usdcAmount = toBigInt(String(amount), 6);
         const p = readClient.optionBook.previewFillOrder(market.order, usdcAmount);
+        // The SDK silently caps numContracts at maxContracts when usdcAmount
+        // exceeds the maker's available size — surface that to the user
+        // instead of letting them think their full bet went on.
+        const capped = p.numContracts >= p.maxContracts && p.maxContracts > 0n;
         setPreview({
           numContracts: p.numContracts,
+          maxContracts: p.maxContracts,
           pricePerContract: p.pricePerContract,
+          totalCollateral: p.totalCollateral,
+          capped,
         });
         setPreviewError(null);
       } catch (e: unknown) {
@@ -97,18 +115,28 @@ export function TradePanel({ market }: { market: MarketView | null }) {
     setSubmitting(true);
     const t = toast.loading('Placing your bet…');
     try {
+      // Pre-fill expiry guard — fails fast before sending the user through
+      // wallet approval if the order has already expired (SDK throws inside
+      // fillOrder otherwise, after the user has signed).
+      validateOrderExpiry(Number(market.order.order.expiry));
+
       const usdcAmount = toBigInt(String(amount), 6);
       const usdcAddr = signerClient.chainConfig.tokens.USDC.address;
-      const optionBook = signerClient.chainConfig.contracts.optionBook;
-      if (!optionBook) throw new Error('OptionBook not deployed on this chain');
+      // Approve and fill against the SAME OptionBook instance the order was
+      // signed for. Odette's order can be tied to a non-default OptionBook
+      // via `rawApiData.optionBookAddress` — the SDK's fillOrder uses that
+      // override (optionBook.ts:417), so the approval must target it too.
+      const orderOptionBook =
+        market.order.rawApiData?.optionBookAddress ??
+        signerClient.chainConfig.contracts.optionBook;
+      if (!orderOptionBook) throw new Error('OptionBook not deployed on this chain');
 
-      await signerClient.erc20.ensureAllowance(usdcAddr, optionBook, usdcAmount);
+      await signerClient.erc20.ensureAllowance(usdcAddr, orderOptionBook, usdcAmount);
       const receipt = await signerClient.optionBook.fillOrder(market.order, usdcAmount);
 
       const explorer = signerClient.chainConfig.explorerUrl;
-      const txHash =
-        (receipt as unknown as { hash?: string })?.hash ??
-        (receipt as unknown as { transactionHash?: string })?.transactionHash;
+      // ethers v6 TransactionReceipt → .hash (no v5 .transactionHash fallback needed)
+      const txHash = receipt?.hash;
       const url = txHash ? `${explorer}/tx/${txHash}` : explorer;
 
       toast.success(
@@ -130,11 +158,17 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         question: `${market.direction} · $${amount} · ${market.asset}`,
       });
     } catch (err: unknown) {
+      // Map every typed SDK error class to a friendly message. The PRD §8
+      // error-code table is the source for what each maps to.
       let msg = 'Transaction failed';
       if (err instanceof OrderExpiredError) msg = 'Market closed — pick a fresh one';
       else if (err instanceof InsufficientAllowanceError) msg = 'Approval needed — try again';
       else if (err instanceof InsufficientBalanceError) msg = 'Insufficient USDC balance';
+      else if (err instanceof SlippageExceededError) msg = 'Price moved, try again';
       else if (err instanceof RateLimitError) msg = 'Rate limited — try again in a moment';
+      else if (err instanceof NetworkUnsupportedError) msg = 'Please switch to Base';
+      else if (err instanceof SignerRequiredError) msg = 'Connect your wallet';
+      else if (err instanceof InvalidParamsError) msg = 'Invalid input — try again';
       else if (err instanceof ContractRevertError) msg = `Contract reverted: ${err.message}`;
       else if (isThetanutsError(err)) msg = err.message;
       else if (err instanceof Error && /user rejected/i.test(err.message)) msg = 'Cancelled';
@@ -235,6 +269,16 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       </div>
 
       {previewError && <p className="mt-2 text-sm text-dump">{previewError}</p>}
+
+      {preview?.capped && (
+        <p className="mt-2 text-xs text-text-muted">
+          Maker cap reached — this order can absorb at most{' '}
+          <span className="num font-semibold text-text">
+            ${Number(fromBigInt(preview.maxContracts * preview.pricePerContract / 100_000_000n, 6)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+          </span>
+          . Larger amount sizes fill against the cap.
+        </p>
+      )}
 
       <div className="mt-4">
         {!isConnected ? (
