@@ -5,6 +5,7 @@ import { TopNav } from '@/components/nav/TopNav';
 import { FilterStrip } from '@/components/markets/FilterStrip';
 import { MarketCard } from '@/components/markets/MarketCard';
 import { Sidebar } from '@/components/markets/Sidebar';
+import { TradePanel } from '@/components/trade/TradePanel';
 import { useMarkets } from '@/lib/sdk/useOrders';
 import { useAppStore, applyFilterSort } from '@/store/app';
 
@@ -20,6 +21,9 @@ export default function MarketsPage() {
     [markets, filter, sort]
   );
 
+  const selectedMarket =
+    filtered.find((m) => m.id === selectedId) ?? markets.find((m) => m.id === selectedId) ?? null;
+
   return (
     <div className="min-h-screen bg-ink-50">
       <TopNav active="/" />
@@ -27,6 +31,7 @@ export default function MarketsPage() {
 
       <main className="mx-auto max-w-page px-6 py-6">
         <div className="flex flex-col gap-6 lg:flex-row">
+          {/* Markets grid */}
           <section className="min-w-0 flex-1">
             {isLoading && <SkeletonGrid />}
             {error != null && (
@@ -35,7 +40,9 @@ export default function MarketsPage() {
                 onRetry={() => refetch()}
               />
             )}
-            {!isLoading && !error && filtered.length === 0 && <EmptyState />}
+            {!isLoading && !error && filtered.length === 0 && (
+              <EmptyState />
+            )}
             {!isLoading && filtered.length > 0 && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {filtered.map((m) => (
@@ -50,8 +57,14 @@ export default function MarketsPage() {
             )}
           </section>
 
-          <div className="hidden w-[300px] shrink-0 lg:block">
-            <Sidebar />
+          {/* Right column: trade panel + sidebar */}
+          <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[300px]">
+            <div className="lg:sticky lg:top-20">
+              <TradePanel market={selectedMarket} />
+            </div>
+            <div className="hidden lg:block">
+              <Sidebar />
+            </div>
           </div>
         </div>
       </main>
