@@ -11,6 +11,7 @@ import {
   type LeaderboardRow,
 } from '@/lib/sdk/useLeaderboard';
 import { cn, shortAddress, fmtUsd } from '@/lib/utils';
+import { getReadClient } from '@/lib/sdk/clients';
 
 const periods: { id: LeaderboardPeriod; label: string; sub: string }[] = [
   { id: 'day', label: '24h', sub: 'last day' },
@@ -169,7 +170,8 @@ function Row({
   row: LeaderboardRow;
   isMe: boolean;
 }) {
-  const notional = Number(row.notional) / 1e6;
+  const client = getReadClient();
+  const notional = Number(client.utils.fromUsdcDecimals(row.notional));
   const badge = inferBadge(rank, row);
   return (
     <li

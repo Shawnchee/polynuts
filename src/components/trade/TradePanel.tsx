@@ -186,11 +186,13 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       ? 'bg-dump hover:bg-dump/90 glow-dump'
       : 'bg-range hover:bg-range/90 glow-range';
 
-  // simulatePayout returns 6-dec USDC directly — no scaling needed.
+  // simulatePayout returns 6-dec USDC; use SDK's formatAmount for the
+  // canonical "trim to N display digits" formatting.
   const payoutUsdcStr = payoutAtFill
-    ? `+$${Number(fromBigInt(payoutAtFill, 6)).toLocaleString('en-US', {
-        maximumFractionDigits: 2,
-      })}`
+    ? `+$${Number(readClient.utils.formatAmount(payoutAtFill, 6, 2)).toLocaleString(
+        'en-US',
+        { maximumFractionDigits: 2 }
+      )}`
     : null;
   const isVanilla = market.family === 'vanilla';
 
@@ -240,9 +242,9 @@ export function TradePanel({ market }: { market: MarketView | null }) {
           label="Contracts"
           value={
             preview
-              ? Number(fromBigInt(preview.numContracts, 6)).toLocaleString('en-US', {
-                  maximumFractionDigits: 4,
-                })
+              ? Number(
+                  readClient.utils.formatAmount(preview.numContracts, 6, 4)
+                ).toLocaleString('en-US', { maximumFractionDigits: 4 })
               : '—'
           }
         />
@@ -274,7 +276,10 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         <p className="mt-2 text-xs text-text-muted">
           Maker cap reached — this order can absorb at most{' '}
           <span className="num font-semibold text-text">
-            ${Number(fromBigInt(preview.maxContracts * preview.pricePerContract / 100_000_000n, 6)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+            $
+            {Number(
+              readClient.utils.formatAmount(preview.totalCollateral, 6, 0)
+            ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
           </span>
           . Larger amount sizes fill against the cap.
         </p>

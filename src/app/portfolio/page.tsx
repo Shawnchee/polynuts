@@ -9,6 +9,7 @@ import { PageShell } from '@/components/layout/PageShell';
 import { PnlPill } from '@/components/portfolio/PnlPill';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { usePositions, useTradeHistory } from '@/lib/sdk/usePortfolio';
+import { getReadClient } from '@/lib/sdk/clients';
 import { fmtUsd, shortAddress } from '@/lib/utils';
 
 export default function PortfolioPage() {
@@ -81,15 +82,21 @@ interface Summary {
 }
 
 function buildSummary(positions: Position[], history: TradeHistory[]): Summary {
+  const client = getReadClient();
+  // pnl is in collateral 6-dec units (positions are USDC-collateralised)
   let totalPnl = 0;
-  for (const p of positions) totalPnl += Number(p.pnl) / 1e6;
+  for (const p of positions) {
+    totalPnl += Number(client.utils.fromUsdcDecimals(p.pnl));
+  }
   const settled = history.filter((h) => h.type === 'settle' || h.type === 'exercise');
   let realized = 0;
   let biggestWin = 0;
   let wins = 0;
   for (const h of settled) {
     const dec = h.collateralDecimals || 6;
-    const value = Number(h.amount) / 10 ** dec;
+    // h.amount is in collateralDecimals units — formatAmount with display
+    // precision = decimals returns the full value as a string
+    const value = Number(client.utils.formatAmount(h.amount, dec, dec));
     if (value > 0) wins++;
     if (value > biggestWin) biggestWin = value;
     realized += value;
@@ -158,6 +165,7 @@ function Section({
 }
 
 function PositionsTable({ rows }: { rows: Position[] }) {
+  const client = getReadClient();
   return (
     <div className="scrollbar-thin overflow-x-auto">
       <table className="w-full text-sm">
@@ -178,7 +186,14 @@ function PositionsTable({ rows }: { rows: Position[] }) {
               <Td>
                 <span className="font-medium text-text">{p.option.underlying}</span>
                 <span className="ml-2 text-text-dim">
-                  {p.option.strikes.map((s) => `$${(Number(s) / 1e8).toLocaleString()}`).join(' / ')}
+                  {p.option.strikes
+                    .map(
+                      (s) =>
+                        `$${Number(
+                          client.utils.fromStrikeDecimals(s)
+                        ).toLocaleString()}`
+                    )
+                    .join(' / ')}
                 </span>
               </Td>
               <Td>
@@ -193,13 +208,17 @@ function PositionsTable({ rows }: { rows: Position[] }) {
                 </span>
               </Td>
               <Td align="right" mono>
-                {(Number(p.amount) / 1e6).toLocaleString('en-US', { maximumFractionDigits: 4 })}
+                {Number(
+                  client.utils.formatAmount(p.amount, 6, 4)
+                ).toLocaleString('en-US', { maximumFractionDigits: 4 })}
               </Td>
               <Td align="right" mono>
-                {fmtUsd(Number(p.entryPrice) / 1e8, { compact: true })}
+                {fmtUsd(Number(client.utils.fromPriceDecimals(p.entryPrice)), {
+                  compact: true,
+                })}
               </Td>
               <Td align="right">
-                <PnlPill amount={Number(p.pnl) / 1e6} />
+                <PnlPill amount={Number(client.utils.fromUsdcDecimals(p.pnl))} />
               </Td>
               <Td align="right">
                 <TimerBadge expirySec={p.option.expiry} />
@@ -218,6 +237,7 @@ function PositionsTable({ rows }: { rows: Position[] }) {
 }
 
 function HistoryTable({ rows }: { rows: TradeHistory[] }) {
+  const client = getReadClient();
   const sorted = [...rows].sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
   return (
     <div className="scrollbar-thin overflow-x-auto">
@@ -245,12 +265,14 @@ function HistoryTable({ rows }: { rows: TradeHistory[] }) {
               </Td>
               <Td>{h.option.underlying}</Td>
               <Td align="right" mono>
-                {(Number(h.amount) / 10 ** (h.collateralDecimals || 6)).toLocaleString('en-US', {
-                  maximumFractionDigits: 4,
-                })}
+                {Number(
+                  client.utils.formatAmount(h.amount, h.collateralDecimals || 6, 4)
+                ).toLocaleString('en-US', { maximumFractionDigits: 4 })}
               </Td>
               <Td align="right" mono>
-                {fmtUsd(Number(h.price) / 1e8, { compact: true })}
+                {fmtUsd(Number(client.utils.fromPriceDecimals(h.price)), {
+                  compact: true,
+                })}
               </Td>
               <Td>
                 <a

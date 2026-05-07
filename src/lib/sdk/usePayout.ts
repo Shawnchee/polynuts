@@ -61,10 +61,15 @@ export function useMarketBinaryFraming(market: MarketView | null) {
       const maxPayout = await fetchMaxPayoutForMarket(market, PROBE_UNIT);
       if (maxPayout == null || maxPayout <= 0n) return null;
 
-      // simulatePayout returns 6-dec USDC. pricePerContract is 8-dec collateral.
-      // Cost of 1 contract in 6-dec USDC = pricePerContract × 1_000_000 / 1e8
-      //                                  = pricePerContract / 100.
-      const costPerContract6dec = market.pricePerContract / 100n;
+      // simulatePayout returns 6-dec USDC. pricePerContract is 8-dec.
+      // Use the SDK's canonical scaleDecimals so the conversion stays in
+      // sync if Thetanuts ever adjusts a token's decimal config.
+      const client = getReadClient();
+      const costPerContract6dec = client.utils.scaleDecimals(
+        market.pricePerContract,
+        8,
+        6
+      );
       if (costPerContract6dec === 0n) return null;
       const multiplier = Number(maxPayout) / Number(costPerContract6dec);
       if (!Number.isFinite(multiplier) || multiplier <= 1) return null;
@@ -95,7 +100,12 @@ export function useMarketBinaryFramings(markets: MarketView[]) {
         if (m.family === 'vanilla') return null;
         const maxPayout = await fetchMaxPayoutForMarket(m, PROBE_UNIT);
         if (maxPayout == null || maxPayout <= 0n) return null;
-        const costPerContract6dec = m.pricePerContract / 100n;
+        const client = getReadClient();
+        const costPerContract6dec = client.utils.scaleDecimals(
+          m.pricePerContract,
+          8,
+          6
+        );
         if (costPerContract6dec === 0n) return null;
         const multiplier = Number(maxPayout) / Number(costPerContract6dec);
         if (!Number.isFinite(multiplier) || multiplier <= 1) return null;

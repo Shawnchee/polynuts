@@ -6,6 +6,7 @@ import { TimerBadge } from '@/components/ui/TimerBadge';
 import { OddsBar } from '@/components/ui/OddsBar';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
+import { getReadClient } from '@/lib/sdk/clients';
 
 const directionGlow: Record<MarketView['direction'], string> = {
   PUMP: 'glow-pump',
@@ -22,7 +23,10 @@ export function MarketCard({
   selected?: boolean;
   onSelect: (id: string) => void;
 }) {
-  const volume = Number(market.availableUsdc) / 1e6;
+  const client = getReadClient();
+  // SDK helpers — fromUsdcDecimals (6-dec) for available collateral,
+  // fromPriceDecimals (8-dec) for premium per contract.
+  const volume = Number(client.utils.fromUsdcDecimals(market.availableUsdc));
   const { data: binary, isLoading: binaryLoading } = useMarketBinaryFraming(market);
   const yesProb = binary?.yesProbability ?? null;
   const yesCents = yesProb != null ? Math.round(yesProb * 100) : null;
@@ -66,7 +70,9 @@ export function MarketCard({
         <div className="mt-4 flex items-center justify-between rounded-md border border-line bg-bg-subtle px-3 py-2">
           <span className="label text-text-dim">Premium</span>
           <span className="num text-base font-bold tabular-nums text-text">
-            {fmtUsd(Number(market.pricePerContract) / 1e8, { compact: true })}
+            {fmtUsd(Number(client.utils.fromPriceDecimals(market.pricePerContract)), {
+              compact: true,
+            })}
           </span>
         </div>
       ) : binary && yesCents != null && noCents != null ? (
