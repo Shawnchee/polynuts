@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-brand: #2563EB;
+  --color-brand-dark: #1D4ED8;
+  --color-brand-light: #EFF6FF;
+
+  --color-pump: #16A34A;
+  --color-pump-light: #F0FDF4;
+  --color-pump-border: #86EFAC;
+  --color-dump: #DC2626;
+  --color-dump-light: #FEF2F2;
+  --color-dump-border: #FECACA;
+  --color-range: #7C3AED;
+  --color-range-light: #F5F3FF;
+  --color-range-border: #C4B5FD;
+
+  --color-ink-900: #09090B;
+  --color-ink-600: #52525B;
+  --color-ink-400: #A1A1AA;
+  --color-ink-200: #E4E4E7;
+  --color-ink-100: #F4F4F5;
+  --color-ink-50: #FAFAFA;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--color-ink-200);
+}
+
+html,
+body {
+  background: var(--color-ink-50);
+  color: var(--color-ink-900);
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+@layer utilities {
+  .num {
+    font-family: var(--font-jetbrains), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--color-ink-200);
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
