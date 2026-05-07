@@ -5,20 +5,23 @@ import { useAccount } from 'wagmi';
 import { PageShell } from '@/components/layout/PageShell';
 import {
   useLeaderboard,
+  useBookDailyStats,
+  reduceDailyStats,
   type LeaderboardPeriod,
   type LeaderboardRow,
 } from '@/lib/sdk/useLeaderboard';
 import { cn, shortAddress, fmtUsd } from '@/lib/utils';
 
-const periods: { id: LeaderboardPeriod; label: string }[] = [
-  { id: 'day', label: 'Daily' },
-  { id: 'week', label: 'Weekly' },
-  { id: 'all', label: 'All-time' },
+const periods: { id: LeaderboardPeriod; label: string; sub: string }[] = [
+  { id: 'day', label: '24h', sub: 'last day' },
+  { id: 'week', label: 'Recent', sub: 'last ~2 days' },
 ];
 
 export default function LeaderboardPage() {
-  const [period, setPeriod] = useState<LeaderboardPeriod>('week');
+  const [period, setPeriod] = useState<LeaderboardPeriod>('day');
   const { data: rows = [], isLoading, error } = useLeaderboard(period);
+  const { data: dailyStats } = useBookDailyStats();
+  const protocol = reduceDailyStats(dailyStats);
   const { address } = useAccount();
 
   const myAddr = address?.toLowerCase();
@@ -27,8 +30,13 @@ export default function LeaderboardPage() {
   return (
     <PageShell active="/leaderboard">
       <div className="flex flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-bold text-text">Leaderboard</h1>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-text">Leaderboard</h1>
+            <p className="mt-1 text-sm text-text-muted">
+              Ranked by USDC notional traded as taker on the Thetanuts OptionBook.
+            </p>
+          </div>
           <div className="flex items-center gap-1 rounded-md border border-line bg-bg-elev p-1">
             {periods.map((p) => (
               <button
@@ -40,12 +48,20 @@ export default function LeaderboardPage() {
                     ? 'bg-text text-bg-elev'
                     : 'text-text-muted hover:text-text'
                 )}
+                title={p.sub}
               >
                 {p.label}
               </button>
             ))}
           </div>
         </div>
+
+        <ProtocolStrip
+          totalTrades={protocol.totalTrades}
+          totalVolumeUsd={protocol.totalVolumeUsd}
+          daysCovered={protocol.daysCovered}
+          latestDate={protocol.latestDate}
+        />
 
         <section className="overflow-hidden rounded-xl border border-line bg-bg-elev">
           <div className="grid grid-cols-[64px_1fr_120px_140px_120px] items-center border-b border-line bg-bg-subtle px-4 py-2.5 text-left">
@@ -80,14 +96,67 @@ export default function LeaderboardPage() {
             </ul>
           )}
 
-          {myAddr && myIdx === -1 && !isLoading && (
+          {myAddr && myIdx === -1 && !isLoading && rows.length > 0 && (
             <div className="border-t border-line bg-brand/10 px-4 py-3 text-sm text-text-muted">
               You haven&apos;t placed a fill in this window yet.
             </div>
           )}
         </section>
+
+        <p className="text-xs text-text-dim">
+          Note: per-trader fills are scanned from on-chain events with the SDK&apos;s
+          ~100K-block chunked limit (≈ 2 days on Base). Lifetime protocol totals
+          come from the indexer-side <span className="num">getBookDailyStats</span>.
+        </p>
       </div>
     </PageShell>
+  );
+}
+
+function ProtocolStrip({
+  totalTrades,
+  totalVolumeUsd,
+  daysCovered,
+  latestDate,
+}: {
+  totalTrades: number;
+  totalVolumeUsd: number;
+  daysCovered: number;
+  latestDate: string | null;
+}) {
+  const cells = [
+    {
+      label: 'Lifetime Volume',
+      value: totalVolumeUsd > 0 ? fmtUsd(totalVolumeUsd, { compact: true }) : '—',
+    },
+    {
+      label: 'Lifetime Trades',
+      value: totalTrades > 0 ? totalTrades.toLocaleString() : '—',
+    },
+    {
+      label: 'Days Indexed',
+      value: daysCovered > 0 ? daysCovered.toString() : '—',
+    },
+    {
+      label: 'Latest Day',
+      value: latestDate ?? '—',
+    },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {cells.map((c, i) => (
+        <div
+          key={c.label}
+          className="card-lift rounded-xl border border-line bg-bg-elev px-4 py-3 animate-fade-in"
+          style={{ animationDelay: `${i * 40}ms` }}
+        >
+          <div className="label text-text-dim">{c.label}</div>
+          <div className="num mt-1 text-md font-bold tabular-nums text-text">
+            {c.value}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
