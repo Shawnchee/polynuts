@@ -18,7 +18,18 @@ function systemPref(): Theme {
 
 export function applyTheme(theme: Theme) {
   if (typeof document === 'undefined') return;
-  document.documentElement.dataset.theme = theme;
+  const root = document.documentElement;
+  // Suppress every transition for the duration of the swap — see globals.css
+  // .theme-switching rule for why. Without this, swapping dark↔light on the
+  // markets grid (~250 cards) interpolates thousands of colors in parallel.
+  root.classList.add('theme-switching');
+  root.dataset.theme = theme;
+  // Force reflow so the class application takes effect before we remove it.
+  void root.offsetHeight;
+  // Drop the suppressor on the next frame — single instant repaint, no lag.
+  requestAnimationFrame(() => {
+    root.classList.remove('theme-switching');
+  });
 }
 
 export function useTheme(): { theme: Theme; setTheme: (t: Theme) => void; toggle: () => void } {

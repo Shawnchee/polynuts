@@ -75,8 +75,19 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
-  /* Anti-FOUC: avoid theme flash before script runs */
-  transition: background-color 240ms ease, color 240ms ease;
+}
+
+/* While the theme is being swapped we suppress every transition so the
+   toggle feels instant. With ~250 market cards on screen, animating
+   color/border/box-shadow on each in parallel jankifies the swap;
+   dark-mode toggles look better instant anyway. The class is added
+   right before applying the new theme and removed on the next frame. */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
 }
 
 /* Body ambient gradient — visible through bg-bg/* surfaces in dark mode */
