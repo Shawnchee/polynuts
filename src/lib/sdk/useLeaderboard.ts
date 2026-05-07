@@ -41,8 +41,9 @@ export function useLeaderboard(period: LeaderboardPeriod) {
       const byTaker = new Map<string, LeaderboardRow>();
       for (const f of fills) {
         const taker = f.taker.toLowerCase();
-        // Notional ≈ numContracts × price, both 8 decimals on chain → divide by 1e10
-        // to land in 6-decimal USDC space (price is in collateral 8-dec, contracts 8-dec).
+        // OrderFillEvent.numContracts is USDC-scaled (6-dec); .price is the
+        // premium in 8-dec collateral units. Premium notional in 6-dec USDC =
+        // numContracts × price / 1e8 (descales price's 8 decimals down to 6).
         const notional = (f.numContracts * f.price) / 10n ** 8n;
         const existing = byTaker.get(taker);
         if (existing) {
