@@ -35,10 +35,19 @@ export interface MarketView {
   question: string;
   structureName: string;
   family: ProductFamily;
-  /** strikes formatted as USD numbers (8-decimal converted) — display only */
+  /** strikes formatted as USD numbers (8-decimal converted), ascending — display only */
   strikes: number[];
-  /** strikes as bigints in 8-dec on-chain format, ascending — used by SDK calls */
+  /** strikes as bigints, sorted ascending — for question generation + UI display */
   strikesAsc: bigint[];
+  /**
+   * strikes as bigints in the API's natural order, which is what the on-chain
+   * contracts expect. Per the PRD spec:
+   *   PUT, PUT_SPREAD, PUT_FLY → DESCENDING
+   *   CALL, CALL_SPREAD, CALL_FLY, all _CONDOR, IRON_CONDOR, RANGER → ASCENDING
+   * Re-sorting before passing to simulatePayout silently produces 0 for the
+   * descending families (verified live — see scripts/verify-sdk.mjs).
+   */
+  strikesContract: bigint[];
   /** Implementation contract address — feed into client.option.simulatePayout */
   implementation: string;
   expiry: number;
@@ -102,33 +111,61 @@ function familyFromImpl(implName: string): ProductFamily {
 }
 
 /**
+ * On-chain strike ordering required by `client.option.simulatePayout`.
+ *
+ * The PRD lists the canonical orders (PUT family descending, CALL family
+ * + 4-strike products ascending) but the Odette API doesn't always return
+ * strikes in the right order — verified live: a PUT_FLY came back as
+ * [75K, 76K, 77K] ascending while the contract returns 0 for ascending
+ * input and $1000 for descending. So we always re-sort to the family's
+ * required order rather than trusting whatever order the API supplied.
+ *
+ *   PUT, PUT_SPREAD, PUT_FLY    → DESCENDING
+ *   PUT_CONDOR                  → ASCENDING (4-strike products always asc)
+ *   CALL family + RANGER + IRON_CONDOR → ASCENDING
+ */
+function strikesInContractOrder(implName: string, raw: bigint[]): bigint[] {
+  const isPutNonCondor =
+    implName === 'PUT' || implName === 'PUT_SPREAD' || implName === 'PUT_FLY';
+  if (isPutNonCondor) {
+    return [...raw].sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
+  }
+  return [...raw].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/**
  * Settlement prices to probe through `client.option.simulatePayout` to find
- * the maximum payout per contract. Each family pays out maximally at known
- * structural points:
- *   - spread:    payout caps at the upper strike
- *   - butterfly: peak at the middle strike
- *   - condor / iron_condor / ranger: peak in the inner-strike band — probe
- *     both inner strikes (strikes[1] and strikes[2] on ascending input) and
- *     take the larger.
+ * the maximum payout per contract.
+ *
+ * Strikes must be passed in the on-chain natural order (the order the API
+ * already returns them in — see `strikesContract` on MarketView). For every
+ * supported family the structural max-payout strike sits at index 1 in
+ * natural order:
+ *   - CALL_SPREAD [low, high]  → strikes[1] = high (ITM)
+ *   - PUT_SPREAD  [high, low]  → strikes[1] = low (ITM)
+ *   - CALL_FLY    [low, mid, high] → strikes[1] = mid (apex)
+ *   - PUT_FLY     [high, mid, low] → strikes[1] = mid (apex)
+ *   - CONDOR / IRON_CONDOR / RANGER (always ascending) → strikes[1] and
+ *     strikes[2] are the inner pair; probe both and take the larger.
  *
  * Returns null for vanilla — vanilla payoff is unbounded.
  */
 export function getProbePrices(
   family: ProductFamily,
-  strikesAsc: bigint[]
+  strikesContract: bigint[]
 ): bigint[] | null {
   if (family === 'vanilla') return null;
   if (family === 'spread') {
-    if (strikesAsc.length < 2) return null;
-    return [strikesAsc[strikesAsc.length - 1]];
+    if (strikesContract.length < 2) return null;
+    return [strikesContract[1]];
   }
   if (family === 'butterfly') {
-    if (strikesAsc.length < 3) return null;
-    return [strikesAsc[1]];
+    if (strikesContract.length < 3) return null;
+    return [strikesContract[1]];
   }
   if (family === 'condor' || family === 'iron_condor' || family === 'ranger') {
-    if (strikesAsc.length < 4) return null;
-    return [strikesAsc[1], strikesAsc[2]];
+    if (strikesContract.length < 4) return null;
+    return [strikesContract[1], strikesContract[2]];
   }
   return null;
 }
@@ -260,8 +297,15 @@ export function buildMarketView(
   const direction = getDirectionFromImpl(implInfo.name);
   if (direction == null) return null;
 
-  const strikes = (raw.strikes ?? []).map((s) => BigInt(s));
-  const strikesAsc = [...strikes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  // strikesContract is sorted into the order each family's contract expects
+  // (PUT/PUT_SPREAD/PUT_FLY descending, everything else ascending) — the API
+  // ordering is unreliable per live verification, see strikesInContractOrder.
+  // strikesAsc is a separately-sorted ascending copy used for display only.
+  const strikesRaw = (raw.strikes ?? []).map((s) => BigInt(s));
+  const strikesContract = strikesInContractOrder(implInfo.name, strikesRaw);
+  const strikesAsc = [...strikesRaw].sort((a, b) =>
+    a < b ? -1 : a > b ? 1 : 0
+  );
   const expirySec = raw.orderExpiryTimestamp;
   const asset = getAssetFromPriceFeed(config, raw.priceFeed);
   const question = generateQuestion(asset, implInfo.name, strikesAsc, expirySec);
@@ -288,6 +332,7 @@ export function buildMarketView(
     family,
     strikes: strikesAsc.map(strikeToUsd),
     strikesAsc,
+    strikesContract,
     implementation: raw.implementation,
     expiry: expirySec,
     pricePerContract: order.order.price,

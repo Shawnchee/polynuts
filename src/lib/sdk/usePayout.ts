@@ -23,7 +23,7 @@ async function fetchMaxPayoutForMarket(
   numContracts: bigint
 ): Promise<bigint | null> {
   if (numContracts <= 0n) return null;
-  const probes = getProbePrices(market.family, market.strikesAsc);
+  const probes = getProbePrices(market.family, market.strikesContract);
   if (!probes) return null;
 
   const client = getReadClient();
@@ -32,7 +32,7 @@ async function fetchMaxPayoutForMarket(
       client.option.simulatePayout(
         market.implementation,
         price,
-        market.strikesAsc,
+        market.strikesContract,
         numContracts
       )
     )
@@ -54,7 +54,7 @@ export function useMarketBinaryFraming(market: MarketView | null) {
   const enabled = !!market && market.family !== 'vanilla';
   return useQuery({
     queryKey: market
-      ? ['payout-unit', market.implementation, market.strikesAsc.map(String), PROBE_UNIT.toString()]
+      ? ['payout-unit', market.implementation, market.strikesContract.map(String), PROBE_UNIT.toString()]
       : ['payout-unit', null],
     queryFn: async () => {
       if (!market) return null;
@@ -88,7 +88,7 @@ export function useMarketBinaryFramings(markets: MarketView[]) {
       queryKey: [
         'payout-unit',
         m.implementation,
-        m.strikesAsc.map(String),
+        m.strikesContract.map(String),
         PROBE_UNIT.toString(),
       ],
       queryFn: async () => {
@@ -125,7 +125,7 @@ export function useFillPayout(
       ? [
           'payout-fill',
           market.implementation,
-          market.strikesAsc.map(String),
+          market.strikesContract.map(String),
           numContracts.toString(),
         ]
       : ['payout-fill', null],
