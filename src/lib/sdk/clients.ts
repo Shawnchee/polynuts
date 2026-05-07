@@ -2,6 +2,7 @@
 
 import { ThetanutsClient } from '@thetanuts-finance/thetanuts-client';
 import { ethers } from 'ethers';
+import { polynutsLogger } from './logger';
 
 const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 8453);
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? 'https://base-mainnet.public.blastapi.io';
@@ -16,6 +17,7 @@ export function getReadClient(): ThetanutsClient {
     chainId: CHAIN_ID as 8453,
     provider,
     referrer: REFERRER,
+    logger: polynutsLogger,
   });
   return _readClient;
 }
@@ -26,6 +28,7 @@ export function createSignerClient(signer: ethers.Signer): ThetanutsClient {
     provider: signer.provider!,
     signer,
     referrer: REFERRER,
+    logger: polynutsLogger,
   });
 }
 
