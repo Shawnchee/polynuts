@@ -287,7 +287,12 @@ export function buildMarketView(
   const family = familyFromImpl(implInfo.name);
   const binary = computeBinaryFraming(family, strikes, order.order.price);
 
-  const id = `${order.order.maker}-${order.order.nonce.toString()}`;
+  // Odette lists multiple orders sharing the same maker+nonce when the maker
+  // re-signs the same option at different price/size tiers — observed live as
+  // ~300 collisions in 355 orders. The order signature is unique by
+  // construction, so use a short suffix of it for a guaranteed-unique id.
+  const sigSuffix = order.signature.slice(-12);
+  const id = `${order.order.maker}-${order.order.nonce.toString()}-${sigSuffix}`;
   let availableUsdc = 0n;
   try {
     availableUsdc = BigInt(raw.maxCollateralUsable);
