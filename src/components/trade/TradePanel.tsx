@@ -29,7 +29,12 @@ import { ShareWinCard } from '@/components/share/ShareWinCard';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 
-const SIZES = [5, 10, 25, 50, 100] as const;
+// Size presets — $1 / $5 / $10 / $25 / $100. The custom input below
+// allows any value down to 10¢ (0.1 USDC = 100_000n in 6-dec) for
+// dev/test bets. USDC's smallest unit is 1n = 1e-6 USDC, but the SDK
+// will reject sub-cent precision via toBigInt validation.
+const SIZES = [1, 5, 10, 25, 100] as const;
+const MIN_BET = 0.1;
 
 interface PreviewState {
   numContracts: bigint;
@@ -43,7 +48,9 @@ interface PreviewState {
 }
 
 export function TradePanel({ market }: { market: MarketView | null }) {
-  const [amount, setAmount] = useState<number>(10);
+  // Default bet size $1 — small enough that anyone can test the full
+  // approval + fill flow without committing real money.
+  const [amount, setAmount] = useState<number>(1);
   const { isConnected } = useAccount();
   const { signerClient } = useSignerClient();
   const { data: balance } = useUsdcBalance();
@@ -261,10 +268,12 @@ export function TradePanel({ market }: { market: MarketView | null }) {
           <span className="label text-text-dim">Custom</span>
           <input
             type="number"
-            min={1}
-            step={1}
+            min={MIN_BET}
+            step={0.1}
             value={amount}
-            onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 0))}
+            onChange={(e) =>
+              setAmount(Math.max(MIN_BET, Number(e.target.value) || 0))
+            }
             className="w-full rounded-md border border-line bg-surface px-2 py-1.5 num text-sm tabular-nums text-text focus:border-brand"
           />
         </div>
