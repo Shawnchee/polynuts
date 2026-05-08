@@ -193,14 +193,28 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         { id: t, duration: 6000 }
       );
     } catch (err: unknown) {
+      const msgText = err instanceof Error ? err.message : '';
+      const wasRejection =
+        /user rejected|user denied|action_rejected/i.test(msgText) ||
+        (err as { code?: number }).code === 4001;
+      if (wasRejection) {
+        // Not an error — the user explicitly clicked Reject in their
+        // wallet. Don't shout in the console; show a friendly toast
+        // explaining they're free to try again.
+        // eslint-disable-next-line no-console
+        console.info('[polynuts] approve cancelled by user');
+        toast.info(
+          'You rejected the approval. Click "Approve USDC" again to retry.',
+          { id: t, duration: 6000 }
+        );
+        return;
+      }
+      // Real error — log + toast.
       // eslint-disable-next-line no-console
       console.error('[polynuts] approve error', err);
       let msg = 'Approval failed';
-      if (err instanceof Error && /user rejected|user denied/i.test(err.message))
-        msg = 'Cancelled — sign the popup to approve';
-      else if (err instanceof Error && /insufficient funds/i.test(err.message))
-        msg = 'Insufficient ETH for gas';
-      else if (err instanceof Error) msg = err.message;
+      if (/insufficient funds/i.test(msgText)) msg = 'Insufficient ETH for gas';
+      else if (msgText) msg = msgText;
       toast.error(msg, { id: t });
     } finally {
       setApproving(false);
@@ -337,10 +351,22 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         question: `${market.direction} · $${amount} · ${market.asset}`,
       });
     } catch (err: unknown) {
+      const msgText = err instanceof Error ? err.message : '';
+      const wasRejection =
+        /user rejected|user denied|action_rejected/i.test(msgText) ||
+        (err as { code?: number }).code === 4001;
+      if (wasRejection) {
+        // eslint-disable-next-line no-console
+        console.info('[polynuts] bet cancelled by user');
+        toast.info('You rejected the bet. Click again to retry.', {
+          id: t,
+          duration: 5000,
+        });
+        return;
+      }
       // eslint-disable-next-line no-console
       console.error('[polynuts] handleBet error', err);
-      // Map every typed SDK error class to a friendly message. The PRD §8
-      // error-code table is the source for what each maps to.
+      // Map every typed SDK error class to a friendly message. PRD §8.
       let msg = 'Transaction failed';
       if (err instanceof OrderExpiredError) msg = 'Market closed — pick a fresh one';
       else if (err instanceof InsufficientAllowanceError) msg = 'Approval needed — try again';
@@ -352,7 +378,6 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       else if (err instanceof InvalidParamsError) msg = 'Invalid input — try again';
       else if (err instanceof ContractRevertError) msg = `Contract reverted: ${err.message}`;
       else if (isThetanutsError(err)) msg = err.message;
-      else if (err instanceof Error && /user rejected|user denied/i.test(err.message)) msg = 'Cancelled';
       else if (err instanceof Error) msg = err.message;
       toast.error(msg, { id: t });
     } finally {

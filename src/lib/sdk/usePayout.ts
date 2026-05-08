@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { getReadClient } from './clients';
 import { getProbePrices, type MarketView } from './markets';
@@ -83,17 +84,46 @@ export function useMarketBinaryFraming(market: MarketView | null) {
 }
 
 /**
- * Batch variant — fetches binary framing for many markets at once. Each
- * card subscribes to its own (impl, strikes) cache entry; React Query
- * dedupes across cards with the same structure.
+ * Batch variant — fetches binary framing for many markets at once.
+ *
+ * Markets are deduped by (implementation, strikesContract, pricePerContract)
+ * before useQueries runs, so 200 markets with only 30 unique structures
+ * register 30 queries instead of 200. Without this, React Query logged
+ * "Duplicate Queries found" warnings for every shared key. Returns an
+ * array aligned 1:1 with the input markets so existing consumers don't
+ * have to change.
  */
 export function useMarketBinaryFramings(markets: MarketView[]) {
-  return useQueries({
-    queries: markets.map((m) => ({
+  // Build the unique-structure list and a back-pointer from each
+  // market index → its unique-structure index.
+  const { uniqueMarkets, indexMap } = useMemo(() => {
+    const seen = new Map<string, { market: MarketView; uniqueIdx: number }>();
+    const unique: MarketView[] = [];
+    const byInput: number[] = [];
+    markets.forEach((m) => {
+      const key = `${m.implementation}|${m.strikesContract
+        .map(String)
+        .join(',')}|${m.pricePerContract.toString()}`;
+      const hit = seen.get(key);
+      if (hit) {
+        byInput.push(hit.uniqueIdx);
+      } else {
+        const idx = unique.length;
+        unique.push(m);
+        seen.set(key, { market: m, uniqueIdx: idx });
+        byInput.push(idx);
+      }
+    });
+    return { uniqueMarkets: unique, indexMap: byInput };
+  }, [markets]);
+
+  const uniqueResults = useQueries({
+    queries: uniqueMarkets.map((m) => ({
       queryKey: [
         'payout-unit',
         m.implementation,
         m.strikesContract.map(String),
+        m.pricePerContract.toString(),
         PROBE_UNIT.toString(),
       ],
       queryFn: async () => {
@@ -117,6 +147,9 @@ export function useMarketBinaryFramings(markets: MarketView[]) {
       gcTime: 30 * 60_000,
     })),
   });
+
+  // Re-expand to one entry per input market.
+  return indexMap.map((uniqueIdx) => uniqueResults[uniqueIdx]);
 }
 
 /**

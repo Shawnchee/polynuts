@@ -25,17 +25,37 @@ const report: Reporter = (msg, meta) => {
  * console with red noise. The handful of patterns here cover Alchemy /
  * QuickNode / Infura free-tier rate-limit messages.
  */
-function isExpectedFreeTierNoise(msg: string, meta: unknown): boolean {
+function isExpectedNoise(msg: string, meta: unknown): boolean {
+  // Build a haystack of every reachable string in `meta` (top-level
+  // properties, nested error.message, JSON fallback) so the patterns
+  // catch the message regardless of how the SDK shaped its log entry.
   const text = (() => {
     if (typeof meta === 'string') return msg + ' ' + meta;
-    const m = meta as { error?: { message?: string } } | undefined;
-    return msg + ' ' + (m?.error?.message ?? JSON.stringify(meta ?? {}));
+    const m = meta as
+      | { error?: { message?: string } | string; cause?: { message?: string } }
+      | undefined;
+    const parts: string[] = [msg];
+    if (typeof m?.error === 'string') parts.push(m.error);
+    if (typeof m?.error === 'object' && m.error?.message) parts.push(m.error.message);
+    if (m?.cause?.message) parts.push(m.cause.message);
+    try {
+      parts.push(JSON.stringify(meta ?? {}));
+    } catch {}
+    return parts.join(' ');
   })();
   return (
+    // Free-tier RPC quotas
     /Free tier plan/i.test(text) ||
     /eth_getLogs requests with up to a \d+ block range/i.test(text) ||
     /rate.?limit/i.test(text) ||
-    /-32600/i.test(text) // generic JSON-RPC "request out of bounds"
+    /-32600/i.test(text) ||
+    // User explicitly rejected a wallet signature — that's user action,
+    // not an error. Examples: MetaMask "User denied transaction
+    // signature", Coinbase Wallet "User rejected request".
+    /user rejected/i.test(text) ||
+    /user denied/i.test(text) ||
+    /action_rejected/i.test(text) ||
+    /code.{0,4}4001/i.test(text)
   );
 }
 
@@ -58,9 +78,9 @@ export const polynutsLogger: ThetanutsLogger = {
     report(`[sdk warn] ${msg}`, meta);
   },
   error(msg, meta) {
-    if (isExpectedFreeTierNoise(msg, meta)) {
+    if (isExpectedNoise(msg, meta)) {
       // eslint-disable-next-line no-console
-      console.info(`[sdk] ${msg} (free-tier RPC, expected)`);
+      console.info(`[sdk] ${msg} (expected — RPC limit or user action)`);
       return;
     }
     // eslint-disable-next-line no-console
