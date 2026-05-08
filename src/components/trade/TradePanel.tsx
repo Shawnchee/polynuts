@@ -26,6 +26,7 @@ import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { DirectionTag } from '@/components/ui/DirectionTag';
 import { ShareWinCard } from '@/components/share/ShareWinCard';
+import { PayoutVisualizer } from '@/components/trade/PayoutVisualizer';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 
@@ -367,6 +368,12 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       </div>
 
       {previewError && <p className="mt-2 text-sm text-dump">{previewError}</p>}
+
+      {preview && (
+        <div className="mt-3">
+          <PayoutVisualizer market={market} numContracts={preview.numContracts} />
+        </div>
+      )}
 
       {preview?.capped && (
         <p className="mt-2 text-xs text-text-muted">
