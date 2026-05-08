@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Flame } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { TopNav } from '@/components/nav/TopNav';
 import { FilterStrip } from '@/components/markets/FilterStrip';
 import { MarketCard } from '@/components/markets/MarketCard';
+import { FeaturedHero } from '@/components/markets/FeaturedHero';
 import { Sidebar } from '@/components/markets/Sidebar';
 import { TradePanel } from '@/components/trade/TradePanel';
 import { useMarkets } from '@/lib/sdk/useOrders';
@@ -81,7 +82,7 @@ export default function MarketsPage() {
         return { m, score: vol * Math.max(1, Math.min(10, mult)) };
       })
       .sort((a, b) => b.score - a.score);
-    return ranked.slice(0, FEATURED_COUNT).map((r) => r.m);
+    return ranked.slice(0, FEATURED_COUNT * 2).map((r) => r.m);
   }, [filtered, multiplierByMarket, client]);
 
   const featuredIds = useMemo(
@@ -134,10 +135,11 @@ export default function MarketsPage() {
             )}
 
             {!isLoading && featured.length > 0 && (
-              <FeaturedStrip
+              <FeaturedHero
                 markets={featured}
                 selectedId={selectedId}
                 onSelect={selectMarket}
+                multiplierByMarket={multiplierByMarket}
               />
             )}
 
@@ -189,42 +191,6 @@ export default function MarketsPage() {
           </div>
         </div>
       </main>
-    </div>
-  );
-}
-
-function FeaturedStrip({
-  markets,
-  selectedId,
-  onSelect,
-}: {
-  markets: MarketView[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-1.5">
-        <Flame className="h-3.5 w-3.5 text-gold" aria-hidden />
-        <span className="label text-gold">Hot Markets</span>
-        <span className="text-xs text-text-dim">
-          · highest volume × payout right now
-        </span>
-      </div>
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-        {markets.map((m, i) => (
-          <div
-            key={m.id}
-            className={cn('animate-fade-in', `stagger-${(i % 5) + 1}`)}
-          >
-            <MarketCard
-              market={m}
-              selected={selectedId === m.id}
-              onSelect={onSelect}
-            />
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

@@ -120,23 +120,28 @@ export function MarketCard({
         )}
       </div>
 
-      {/* YES / NO row — visually dominates the card per Polymarket pattern */}
+      {/* Outcome row.
+          - Bounded structures (spread / butterfly / condor / ranger):
+            YES / NO binary pricing in cents (Polymarket-style).
+          - Vanilla calls/puts: ONE full-width directional CTA — vanilla
+            has unbounded payoff so there's no honest "NO" pricing.
+          - Loading: shimmer placeholders.
+       */}
       {!isVanilla && yesCents != null && noCents != null ? (
         <div className="mt-3 grid grid-cols-2 gap-1.5">
           <YesNoButton label="Yes" cents={yesCents} variant="yes" />
           <YesNoButton label="No" cents={noCents} variant="no" />
         </div>
       ) : isVanilla ? (
-        <div className="mt-3 grid grid-cols-2 gap-1.5">
+        <div className="mt-3">
           <YesNoButton
-            label={market.direction === 'PUMP' ? 'Above' : 'Below'}
+            label={
+              market.direction === 'PUMP'
+                ? `Bet above $${(market.strikesAsc[0] && Number(market.strikesAsc[0]) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                : `Bet below $${(market.strikesAsc[0] && Number(market.strikesAsc[0]) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+            }
             cents={null}
             variant={market.direction === 'PUMP' ? 'yes' : 'no'}
-          />
-          <YesNoButton
-            label="Skip"
-            cents={null}
-            variant="muted"
           />
         </div>
       ) : (
