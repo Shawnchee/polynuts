@@ -1,9 +1,11 @@
 'use client';
 
+import { Info } from 'lucide-react';
 import type { MarketView } from '@/lib/sdk/markets';
 import { DirectionTag } from '@/components/ui/DirectionTag';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { OddsBar } from '@/components/ui/OddsBar';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
@@ -77,7 +79,29 @@ export function MarketCard({
         </div>
       ) : binary && yesCents != null && noCents != null ? (
         <>
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="mt-4 flex items-center gap-1">
+            <Tooltip
+              className="z-10"
+              content={
+                <span>
+                  <strong>{yesCents}¢</strong> = the market thinks there&apos;s
+                  ~{yesCents}% chance YES happens. Pay {yesCents}¢, win $1 if
+                  it does. NO is the inverse.
+                </span>
+              }
+            >
+              <span
+                role="button"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex h-3 w-3 cursor-help items-center justify-center text-text-dim hover:text-text-muted"
+                aria-label="What does YES/NO cents mean?"
+              >
+                <Info className="h-3 w-3" />
+              </span>
+            </Tooltip>
+            <span className="label text-text-dim">odds</span>
+          </div>
+          <div className="mt-1 grid grid-cols-2 gap-2">
             <PillOdds label="YES" cents={yesCents} active="pump" />
             <PillOdds label="NO" cents={noCents} active="dump" />
           </div>
