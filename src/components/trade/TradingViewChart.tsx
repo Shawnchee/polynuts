@@ -1,10 +1,7 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
-
-const TV_SCRIPT = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
 
 const SYMBOL_MAP: Record<string, string> = {
   ETH: 'COINBASE:ETHUSD',
@@ -19,11 +16,18 @@ const SYMBOL_MAP: Record<string, string> = {
 function tvSymbol(asset: string): string | null {
   const upper = asset.toUpperCase();
   if (upper in SYMBOL_MAP) return SYMBOL_MAP[upper];
-  // Best-effort fallback — most majors trade on Coinbase under TICKERUSD
   if (/^[A-Z]{2,6}$/.test(upper)) return `COINBASE:${upper}USD`;
   return null;
 }
 
+/**
+ * TradingView spot chart for the underlying asset.
+ *
+ * Uses the public widgetembed iframe URL — far simpler than the script
+ * embed (which requires a precise DOM scaffold and silently fails to
+ * render when the structure is off). The iframe is keyed on
+ * (symbol, theme) so a dark↔light toggle replaces it cleanly.
+ */
 export function TradingViewChart({
   asset,
   height = 240,
@@ -33,50 +37,6 @@ export function TradingViewChart({
 }) {
   const { theme } = useTheme();
   const symbol = tvSymbol(asset);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const reactId = useId();
-  const containerId = `tv-chart-${reactId.replace(/:/g, '-')}-${asset}-${theme}`;
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    if (!symbol || !containerRef.current) return;
-    setLoaded(false);
-    const host = containerRef.current;
-    // Wipe any previous widget iframe before injecting the new one
-    host.innerHTML = '';
-    const inner = document.createElement('div');
-    inner.id = containerId;
-    inner.style.height = '100%';
-    inner.style.width = '100%';
-    host.appendChild(inner);
-
-    const script = document.createElement('script');
-    script.src = TV_SCRIPT;
-    script.async = true;
-    script.type = 'text/javascript';
-    script.innerHTML = JSON.stringify({
-      autosize: true,
-      symbol,
-      interval: '15',
-      timezone: 'Etc/UTC',
-      theme: theme === 'dark' ? 'dark' : 'light',
-      style: '1',
-      locale: 'en',
-      toolbar_bg: theme === 'dark' ? '#0a0c12' : '#ffffff',
-      enable_publishing: false,
-      hide_top_toolbar: true,
-      hide_legend: true,
-      save_image: false,
-      container_id: containerId,
-    });
-    script.onload = () => setLoaded(true);
-    host.appendChild(script);
-
-    return () => {
-      // Detach the widget cleanly on asset/theme change so we don't stack iframes.
-      host.innerHTML = '';
-    };
-  }, [symbol, theme, containerId]);
 
   if (!symbol) {
     return (
@@ -89,20 +49,40 @@ export function TradingViewChart({
     );
   }
 
+  // Build the public widget URL — these params are documented at
+  // https://www.tradingview.com/widget-docs/widgets/charts/advanced-chart/
+  const params = new URLSearchParams({
+    symbol,
+    interval: '15',
+    theme: theme === 'dark' ? 'dark' : 'light',
+    style: '1', // candles
+    locale: 'en',
+    timezone: 'Etc/UTC',
+    hideideas: '1',
+    hidetoptoolbar: '1',
+    hidesidetoolbar: '1',
+    save_image: '0',
+    studies: '[]',
+  });
+  const src = `https://s.tradingview.com/widgetembed/?${params.toString()}`;
+
   return (
     <div
-      className="relative overflow-hidden rounded-md border border-line bg-bg-elev"
+      className={cn(
+        'overflow-hidden rounded-md border border-line bg-bg-elev'
+      )}
       style={{ height }}
     >
-      <div ref={containerRef} className="absolute inset-0" />
-      {!loaded && (
-        <div
-          aria-hidden
-          className={cn(
-            'absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-surface-hover to-transparent'
-          )}
-        />
-      )}
+      <iframe
+        // key forces React to fully unmount/remount the iframe on
+        // symbol/theme change — avoids stale cached chart state.
+        key={`${symbol}-${theme}`}
+        src={src}
+        title={`${asset} chart`}
+        allow="fullscreen"
+        loading="lazy"
+        className="h-full w-full border-0"
+      />
     </div>
   );
 }

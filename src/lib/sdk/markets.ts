@@ -306,7 +306,13 @@ export function buildMarketView(
   const strikesAsc = [...strikesRaw].sort((a, b) =>
     a < b ? -1 : a > b ? 1 : 0
   );
-  const expirySec = raw.orderExpiryTimestamp;
+  // CRITICAL: use order.expiry (option settlement timestamp) — NOT
+  // rawApiData.orderExpiryTimestamp (which is the order-on-book signature
+  // deadline, typically 1 minute from now and shared across all orders).
+  // Verified live: o.order.expiry = "2026-05-09T08:00Z" (real settlement)
+  // vs raw.orderExpiryTimestamp = "2026-05-08T12:22Z" (sig deadline only).
+  // The SDK's Order.expiry IS the on-chain option expiry.
+  const expirySec = Number(order.order.expiry);
   const asset = getAssetFromPriceFeed(config, raw.priceFeed);
   const question = generateQuestion(asset, implInfo.name, strikesAsc, expirySec);
   const structureName = getStructureLabel(implInfo.name);

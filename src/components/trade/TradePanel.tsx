@@ -24,12 +24,14 @@ import { getReadClient } from '@/lib/sdk/clients';
 import { useSignerClient } from '@/lib/sdk/useSignerClient';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
+import { useUsdcAllowance, MAX_UINT256 } from '@/lib/sdk/useUsdcAllowance';
 import { DirectionTag } from '@/components/ui/DirectionTag';
 import { ShareWinCard } from '@/components/share/ShareWinCard';
 import { PayoutChart } from '@/components/trade/PayoutChart';
 import { TradingViewChart } from '@/components/trade/TradingViewChart';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
+import { useQueryClient } from '@tanstack/react-query';
 
 type ChartTab = 'payout' | 'spot';
 
@@ -65,7 +67,20 @@ export function TradePanel({ market }: { market: MarketView | null }) {
   const { signerClient, ready, notReadyReason } = useSignerClient();
   const { data: balance } = useUsdcBalance();
   const prependActivity = useAppStore((s) => s.prependActivity);
+  const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
+  const [approving, setApproving] = useState(false);
+
+  // Check the current USDC allowance against the order's OptionBook spender.
+  // When allowance < bet, we surface a separate "Approve USDC" button so
+  // the user does the approval explicitly first (instead of two wallet
+  // popups inside one click). Approving max-uint256 means future bets up
+  // to that allowance fire fillOrder directly with no second wallet popup.
+  const orderOptionBook =
+    market?.order.rawApiData?.optionBookAddress ??
+    signerClient?.chainConfig.contracts.optionBook ??
+    null;
+  const { data: allowance } = useUsdcAllowance(orderOptionBook);
 
   const readClient = getReadClient();
   const [preview, setPreview] = useState<PreviewState | null>(null);
@@ -116,6 +131,48 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       return false;
     }
   }, [balance, amount]);
+
+  // Whether the wallet has enough USDC pre-approved to skip the approval
+  // step. Compares allowance bigint to the bet's USDC amount in 6-dec.
+  const needsApproval = useMemo(() => {
+    if (!allowance) return true;
+    try {
+      const required = toBigInt(String(amount), 6);
+      return allowance < required;
+    } catch {
+      return true;
+    }
+  }, [allowance, amount]);
+
+  async function handleApprove() {
+    if (!signerClient || !orderOptionBook) {
+      toast.error('Connect your wallet first');
+      return;
+    }
+    setApproving(true);
+    const t = toast.loading('Approving USDC for trading…');
+    try {
+      const usdcAddr = signerClient.chainConfig.tokens.USDC.address;
+      // Approve max — single approval covers all future bets up to 2^256-1
+      // USDC. Standard DeFi pattern; users can always revoke via Etherscan
+      // or a tool like Revoke.cash.
+      await signerClient.erc20.approve(usdcAddr, orderOptionBook, MAX_UINT256);
+      // Bust the allowance cache so the bet button activates immediately.
+      await queryClient.invalidateQueries({ queryKey: ['usdc-allowance'] });
+      toast.success('USDC approved — you can bet without re-approving', {
+        id: t,
+        duration: 5000,
+      });
+    } catch (err: unknown) {
+      let msg = 'Approval failed';
+      if (err instanceof Error && /user rejected|user denied/i.test(err.message))
+        msg = 'Cancelled';
+      else if (err instanceof Error) msg = err.message;
+      toast.error(msg, { id: t });
+    } finally {
+      setApproving(false);
+    }
+  }
 
   if (!market) {
     return (
@@ -170,6 +227,11 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         signerClient.chainConfig.contracts.optionBook;
       if (!orderOptionBook) throw new Error('OptionBook not deployed on this chain');
 
+      // ensureAllowance is idempotent — returns null when the existing
+      // allowance already covers usdcAmount, so users who pre-approved
+      // via the explicit "Approve USDC" button don't see a second wallet
+      // popup here. Only fires an approval if the user clicked Bet
+      // without pre-approving (and the bet is below their balance).
       // eslint-disable-next-line no-console
       console.info('[polynuts] ensureAllowance', { usdcAddr, orderOptionBook, usdcAmount });
       const approveReceipt = await signerClient.erc20.ensureAllowance(
@@ -413,6 +475,20 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               </button>
             )}
           </ConnectButton.Custom>
+        ) : needsApproval && !insufficientBalance && amount >= MIN_BET ? (
+          // Pre-approval step — separated from the bet flow so the user
+          // does this once per token-spender pair (max-uint256 approval),
+          // and every subsequent bet is a single wallet popup.
+          <button
+            onClick={handleApprove}
+            disabled={approving}
+            className={cn(
+              'press-scale w-full rounded-md bg-brand py-3 text-base font-semibold text-white hover:bg-brand-dark transition-colors glow-brand',
+              approving && 'cursor-not-allowed opacity-60'
+            )}
+          >
+            {approving ? 'Approving…' : '1. Approve USDC for trading'}
+          </button>
         ) : (
           <button
             onClick={handleBet}
