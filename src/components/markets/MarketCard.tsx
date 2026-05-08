@@ -1,11 +1,7 @@
 'use client';
 
-import { Info } from 'lucide-react';
 import type { MarketView } from '@/lib/sdk/markets';
-import { DirectionTag } from '@/components/ui/DirectionTag';
 import { TimerBadge } from '@/components/ui/TimerBadge';
-import { OddsBar } from '@/components/ui/OddsBar';
-import { Tooltip } from '@/components/ui/Tooltip';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
@@ -16,6 +12,32 @@ const directionGlow: Record<MarketView['direction'], string> = {
   RANGE: 'glow-range',
 };
 
+const assetEmoji: Record<string, string> = {
+  ETH: '◆',
+  BTC: '₿',
+  SOL: '◎',
+  XRP: '✕',
+  DOGE: 'Ð',
+  BNB: 'B',
+  AVAX: 'A',
+};
+
+/**
+ * Compact Polymarket-style market card.
+ *
+ *   ┌──────────────────────────┐
+ *   │ ◆ Will ETH close above    │  ← asset glyph + question (2 lines max)
+ *   │   $3,200 by 4PM UTC?      │
+ *   │                  62¢ ↑    │  ← lead probability + direction arrow
+ *   │ ┌────────┐ ┌────────┐    │
+ *   │ │ Yes 62¢│ │ No  38¢│    │  ← compact YES/NO row
+ *   │ └────────┘ └────────┘    │
+ *   │ $84K vol      Tom 08:00   │  ← meta strip at bottom
+ *   └──────────────────────────┘
+ *
+ * Tighter padding (12px instead of 16px), smaller meta row, big YES/NO
+ * buttons that visually dominate to match Polymarket's compact 4-col grid.
+ */
 export function MarketCard({
   market,
   selected,
@@ -26,22 +48,26 @@ export function MarketCard({
   onSelect: (id: string) => void;
 }) {
   const client = getReadClient();
-  // SDK helpers — fromUsdcDecimals (6-dec) for available collateral,
-  // fromPriceDecimals (8-dec) for premium per contract.
   const volume = Number(client.utils.fromUsdcDecimals(market.availableUsdc));
   const { data: binary, isLoading: binaryLoading } = useMarketBinaryFraming(market);
   const yesProb = binary?.yesProbability ?? null;
   const yesCents = yesProb != null ? Math.round(yesProb * 100) : null;
   const noCents = yesCents != null ? 100 - yesCents : null;
-  const multiplier = binary?.multiplier ?? null;
   const isVanilla = market.family === 'vanilla';
+
+  const dirColor =
+    market.direction === 'PUMP'
+      ? 'text-pump dark:text-pump-dark'
+      : market.direction === 'DUMP'
+      ? 'text-dump dark:text-dump-dark'
+      : 'text-range dark:text-range-dark';
 
   return (
     <button
       onClick={() => onSelect(market.id)}
       className={cn(
         'group relative flex h-full flex-col overflow-hidden rounded-xl',
-        'border border-line bg-bg-elev p-4 text-left',
+        'border border-line bg-bg-elev p-3 text-left',
         'card-lift press-scale cursor-pointer',
         'hover:border-text-dim',
         selected && 'border-text ring-2 ring-text/8 ' + directionGlow[market.direction]
@@ -59,124 +85,114 @@ export function MarketCard({
         />
       )}
 
-      <div className="flex items-center justify-between">
-        <DirectionTag direction={market.direction} />
-        <TimerBadge expirySec={market.expiry} />
+      {/* Header — asset glyph + question; lead probability on the right */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <span
+            aria-hidden
+            className={cn(
+              'num mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm font-bold',
+              'bg-bg-subtle text-text'
+            )}
+          >
+            {assetEmoji[market.asset] ?? market.asset.slice(0, 1)}
+          </span>
+          <p className="line-clamp-2 min-h-[34px] text-sm font-medium leading-snug text-text">
+            {market.question}
+          </p>
+        </div>
+        {!isVanilla && yesCents != null ? (
+          <div className="flex shrink-0 flex-col items-end">
+            <span className={cn('num text-md font-bold tabular-nums', dirColor)}>
+              {yesCents}%
+            </span>
+            <span className="text-[9px] uppercase tracking-wide text-text-dim">
+              chance
+            </span>
+          </div>
+        ) : (
+          <span className="num text-xs text-text-dim">
+            {fmtUsd(
+              Number(client.utils.fromPriceDecimals(market.pricePerContract)),
+              { compact: true }
+            )}
+          </span>
+        )}
       </div>
 
-      <p className="mt-3 line-clamp-2 min-h-[36px] text-base font-medium leading-snug text-text">
-        {market.question}
-      </p>
-
-      {isVanilla ? (
-        <div className="mt-4 flex items-center justify-between rounded-md border border-line bg-bg-subtle px-3 py-2">
-          <span className="label text-text-dim">Premium</span>
-          <span className="num text-base font-bold tabular-nums text-text">
-            {fmtUsd(Number(client.utils.fromPriceDecimals(market.pricePerContract)), {
-              compact: true,
-            })}
-          </span>
+      {/* YES / NO row — visually dominates the card per Polymarket pattern */}
+      {!isVanilla && yesCents != null && noCents != null ? (
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          <YesNoButton label="Yes" cents={yesCents} variant="yes" />
+          <YesNoButton label="No" cents={noCents} variant="no" />
         </div>
-      ) : binary && yesCents != null && noCents != null ? (
-        <>
-          <div className="mt-4 flex items-center gap-1">
-            <Tooltip
-              className="z-10"
-              content={
-                <span>
-                  <strong>{yesCents}¢</strong> = the market thinks there&apos;s
-                  ~{yesCents}% chance YES happens. Pay {yesCents}¢, win $1 if
-                  it does. NO is the inverse.
-                </span>
-              }
-            >
-              <span
-                role="button"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex h-3 w-3 cursor-help items-center justify-center text-text-dim hover:text-text-muted"
-                aria-label="What does YES/NO cents mean?"
-              >
-                <Info className="h-3 w-3" />
-              </span>
-            </Tooltip>
-            <span className="label text-text-dim">odds</span>
-          </div>
-          <div className="mt-1 grid grid-cols-2 gap-2">
-            <PillOdds label="YES" cents={yesCents} active="pump" />
-            <PillOdds label="NO" cents={noCents} active="dump" />
-          </div>
-          <div className="mt-3">
-            <OddsBar yesProb={yesCents / 100} direction={market.direction} />
-          </div>
-        </>
+      ) : isVanilla ? (
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          <YesNoButton
+            label={market.direction === 'PUMP' ? 'Above' : 'Below'}
+            cents={null}
+            variant={market.direction === 'PUMP' ? 'yes' : 'no'}
+          />
+          <YesNoButton
+            label="Skip"
+            cents={null}
+            variant="muted"
+          />
+        </div>
       ) : (
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
           <OddsSkeleton loading={binaryLoading} />
           <OddsSkeleton loading={binaryLoading} />
         </div>
       )}
 
-      <div className="mt-auto flex items-center justify-between pt-4 text-sm text-text-muted">
-        <span className="inline-flex items-center gap-1">
-          <span className="label text-text-dim">vol</span>
+      {/* Meta strip — volume + expiry */}
+      <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-xs text-text-muted">
+        <span className="num">
           <span className="num font-semibold text-text">
             {fmtUsd(volume, { compact: true })}
-          </span>
+          </span>{' '}
+          vol
         </span>
-        {multiplier != null && multiplier > 0 ? (
-          <span
-            className={cn(
-              'num rounded-full border px-2 py-0.5 text-xs font-bold tabular-nums',
-              market.direction === 'PUMP' && 'border-pump/30 text-pump dark:text-pump-dark',
-              market.direction === 'DUMP' && 'border-dump/30 text-dump dark:text-dump-dark',
-              market.direction === 'RANGE' && 'border-range/30 text-range dark:text-range-dark'
-            )}
-          >
-            {multiplier.toFixed(2)}x
-          </span>
-        ) : (
-          <span className="text-xs uppercase tracking-wide text-text-dim">
-            {market.structureName}
-          </span>
-        )}
+        <TimerBadge expirySec={market.expiry} />
       </div>
     </button>
   );
 }
 
-function PillOdds({
+function YesNoButton({
   label,
   cents,
-  active,
+  variant,
 }: {
   label: string;
-  cents: number;
-  active: 'pump' | 'dump';
+  cents: number | null;
+  variant: 'yes' | 'no' | 'muted';
 }) {
-  const colorCls =
-    active === 'pump'
-      ? 'border-pump-border/60 bg-pump-light dark:bg-pump/10 text-pump dark:text-pump-dark'
-      : 'border-dump-border/60 bg-dump-light dark:bg-dump/10 text-dump dark:text-dump-dark';
+  const cls =
+    variant === 'yes'
+      ? 'bg-pump/12 text-pump dark:bg-pump/15 dark:text-pump-dark hover:bg-pump/20 dark:hover:bg-pump/25'
+      : variant === 'no'
+      ? 'bg-dump/12 text-dump dark:bg-dump/15 dark:text-dump-dark hover:bg-dump/20 dark:hover:bg-dump/25'
+      : 'bg-bg-subtle text-text-muted';
   return (
     <div
       className={cn(
-        'flex items-center justify-between rounded-md border px-2.5 py-1.5 transition-colors duration-180',
-        colorCls
+        'flex items-center justify-between gap-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors duration-180',
+        cls
       )}
     >
-      <span className="label">{label}</span>
-      <span className="num text-base font-bold tabular-nums">{cents}¢</span>
+      <span>{label}</span>
+      {cents != null && (
+        <span className="num tabular-nums">{cents}¢</span>
+      )}
     </div>
   );
 }
 
 function OddsSkeleton({ loading }: { loading: boolean }) {
   return (
-    <div
-      className={cn(
-        'relative flex h-9 items-center justify-between overflow-hidden rounded-md border border-line bg-bg-subtle px-2.5'
-      )}
-    >
+    <div className="relative flex h-7 items-center justify-between overflow-hidden rounded-md bg-bg-subtle px-2.5">
       {loading && (
         <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-surface-hover to-transparent" />
       )}

@@ -146,28 +146,60 @@ export function TradePanel({ market }: { market: MarketView | null }) {
   }, [allowance, amount]);
 
   async function handleApprove() {
-    if (!signerClient || !orderOptionBook) {
-      toast.error('Connect your wallet first');
+    if (!ready || !signerClient || !orderOptionBook) {
+      if (notReadyReason === 'wrong-chain') {
+        toast.error('Switch your wallet to Base mainnet first');
+      } else {
+        toast.error('Connect your wallet first');
+      }
       return;
     }
     setApproving(true);
-    const t = toast.loading('Approving USDC for trading…');
+    const t = toast.loading('Sign the approval in your wallet…');
+    // eslint-disable-next-line no-console
+    console.info('[polynuts] approve start', {
+      usdc: signerClient.chainConfig.tokens.USDC.address,
+      spender: orderOptionBook,
+      amount: 'MAX_UINT256',
+    });
     try {
       const usdcAddr = signerClient.chainConfig.tokens.USDC.address;
       // Approve max — single approval covers all future bets up to 2^256-1
-      // USDC. Standard DeFi pattern; users can always revoke via Etherscan
-      // or a tool like Revoke.cash.
-      await signerClient.erc20.approve(usdcAddr, orderOptionBook, MAX_UINT256);
+      // USDC. Standard DeFi pattern; users can always revoke later.
+      const receipt = await signerClient.erc20.approve(
+        usdcAddr,
+        orderOptionBook,
+        MAX_UINT256
+      );
+      // eslint-disable-next-line no-console
+      console.info('[polynuts] approve mined', { txHash: receipt?.hash });
       // Bust the allowance cache so the bet button activates immediately.
       await queryClient.invalidateQueries({ queryKey: ['usdc-allowance'] });
-      toast.success('USDC approved — you can bet without re-approving', {
-        id: t,
-        duration: 5000,
-      });
+      const explorer = signerClient.chainConfig.explorerUrl;
+      toast.success(
+        <span>
+          USDC approved! You can bet without re-approving.{' '}
+          {receipt?.hash && (
+            <a
+              className="text-brand underline"
+              href={`${explorer}/tx/${receipt.hash}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View tx
+            </a>
+          )}
+        </span>,
+        { id: t, duration: 6000 }
+      );
     } catch (err: unknown) {
+      // eslint-disable-next-line no-console
+      console.error('[polynuts] approve error', err);
       let msg = 'Approval failed';
       if (err instanceof Error && /user rejected|user denied/i.test(err.message))
-        msg = 'Cancelled';
+        msg = 'Cancelled — sign the popup to approve';
+      else if (err instanceof Error && /insufficient funds/i.test(err.message))
+        msg = 'Insufficient ETH for gas';
       else if (err instanceof Error) msg = err.message;
       toast.error(msg, { id: t });
     } finally {
