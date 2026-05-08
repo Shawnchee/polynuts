@@ -30,11 +30,10 @@ import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 
 // Size presets — $1 / $5 / $10 / $25 / $100. The custom input below
-// allows any value down to 10¢ (0.1 USDC = 100_000n in 6-dec) for
-// dev/test bets. USDC's smallest unit is 1n = 1e-6 USDC, but the SDK
-// will reject sub-cent precision via toBigInt validation.
+// accepts any value as the user types and validates >= MIN_BET only
+// at submit, so partial input ("1.", "0.") doesn't get clobbered.
 const SIZES = [1, 5, 10, 25, 100] as const;
-const MIN_BET = 0.1;
+const MIN_BET = 1;
 
 interface PreviewState {
   numContracts: bigint;
@@ -49,10 +48,17 @@ interface PreviewState {
 
 export function TradePanel({ market }: { market: MarketView | null }) {
   // Default bet size $1 — small enough that anyone can test the full
-  // approval + fill flow without committing real money.
-  const [amount, setAmount] = useState<number>(1);
+  // approve + fill flow without committing real money.
+  // Track the input as a string so partial values ("1.", "10.5") don't
+  // get clobbered to a number on every keystroke; parse + validate at
+  // submit time only.
+  const [amountInput, setAmountInput] = useState<string>('1');
+  const amount = useMemo(() => {
+    const n = Number(amountInput);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }, [amountInput]);
   const { isConnected } = useAccount();
-  const { signerClient } = useSignerClient();
+  const { signerClient, ready, notReadyReason } = useSignerClient();
   const { data: balance } = useUsdcBalance();
   const prependActivity = useAppStore((s) => s.prependActivity);
   const [submitting, setSubmitting] = useState(false);
@@ -116,12 +122,33 @@ export function TradePanel({ market }: { market: MarketView | null }) {
   }
 
   async function handleBet() {
-    if (!market || !signerClient) {
-      toast.error('Connect your wallet first');
+    if (!market) return;
+    if (!ready || !signerClient) {
+      // Surface the actual blocker rather than a generic "connect wallet"
+      // message — wrong-chain is by far the most common cause of "click
+      // and nothing happens" because viem's connector client is null
+      // when on a non-configured chain.
+      if (notReadyReason === 'wrong-chain') {
+        toast.error('Switch your wallet to Base mainnet to bet');
+      } else if (notReadyReason === 'adapter-failed') {
+        toast.error('Wallet bridge failed — try reconnecting');
+      } else {
+        toast.error('Connect your wallet first');
+      }
+      return;
+    }
+    if (amount < MIN_BET) {
+      toast.error(`Minimum bet is $${MIN_BET} USDC`);
       return;
     }
     setSubmitting(true);
     const t = toast.loading('Placing your bet…');
+    // eslint-disable-next-line no-console
+    console.info('[polynuts] handleBet start', {
+      market: market.id,
+      amount,
+      direction: market.direction,
+    });
     try {
       // Pre-fill expiry guard — fails fast before sending the user through
       // wallet approval if the order has already expired (SDK throws inside
@@ -139,8 +166,20 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         signerClient.chainConfig.contracts.optionBook;
       if (!orderOptionBook) throw new Error('OptionBook not deployed on this chain');
 
-      await signerClient.erc20.ensureAllowance(usdcAddr, orderOptionBook, usdcAmount);
+      // eslint-disable-next-line no-console
+      console.info('[polynuts] ensureAllowance', { usdcAddr, orderOptionBook, usdcAmount });
+      const approveReceipt = await signerClient.erc20.ensureAllowance(
+        usdcAddr,
+        orderOptionBook,
+        usdcAmount
+      );
+      // eslint-disable-next-line no-console
+      console.info('[polynuts] approval done', { txHash: approveReceipt?.hash ?? 'already-approved' });
+      // eslint-disable-next-line no-console
+      console.info('[polynuts] fillOrder start');
       const receipt = await signerClient.optionBook.fillOrder(market.order, usdcAmount);
+      // eslint-disable-next-line no-console
+      console.info('[polynuts] fillOrder done', { txHash: receipt?.hash });
 
       const explorer = signerClient.chainConfig.explorerUrl;
       // ethers v6 TransactionReceipt → .hash (no v5 .transactionHash fallback needed)
@@ -199,6 +238,8 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         question: `${market.direction} · $${amount} · ${market.asset}`,
       });
     } catch (err: unknown) {
+      // eslint-disable-next-line no-console
+      console.error('[polynuts] handleBet error', err);
       // Map every typed SDK error class to a friendly message. The PRD §8
       // error-code table is the source for what each maps to.
       let msg = 'Transaction failed';
@@ -212,7 +253,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       else if (err instanceof InvalidParamsError) msg = 'Invalid input — try again';
       else if (err instanceof ContractRevertError) msg = `Contract reverted: ${err.message}`;
       else if (isThetanutsError(err)) msg = err.message;
-      else if (err instanceof Error && /user rejected/i.test(err.message)) msg = 'Cancelled';
+      else if (err instanceof Error && /user rejected|user denied/i.test(err.message)) msg = 'Cancelled';
       else if (err instanceof Error) msg = err.message;
       toast.error(msg, { id: t });
     } finally {
@@ -252,7 +293,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
           {SIZES.map((s) => (
             <button
               key={s}
-              onClick={() => setAmount(s)}
+              onClick={() => setAmountInput(String(s))}
               className={cn(
                 'press-scale rounded-md border px-1 py-2 text-sm font-medium tabular-nums num transition-colors duration-120',
                 amount === s
@@ -267,16 +308,28 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         <div className="mt-2 flex items-center gap-2">
           <span className="label text-text-dim">Custom</span>
           <input
-            type="number"
-            min={MIN_BET}
-            step={0.1}
-            value={amount}
-            onChange={(e) =>
-              setAmount(Math.max(MIN_BET, Number(e.target.value) || 0))
-            }
+            // Free-form text input — accepts any partial value while typing
+            // ("1.", "10.5", "") so the cursor never jumps. Validation runs
+            // at submit time against MIN_BET.
+            type="text"
+            inputMode="decimal"
+            placeholder={`min $${MIN_BET}`}
+            value={amountInput}
+            onChange={(e) => {
+              // Permit only digits + a single dot — strip everything else
+              const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+              const dotCount = (cleaned.match(/\./g) ?? []).length;
+              if (dotCount > 1) return;
+              setAmountInput(cleaned);
+            }}
             className="w-full rounded-md border border-line bg-surface px-2 py-1.5 num text-sm tabular-nums text-text focus:border-brand"
           />
         </div>
+        {amountInput !== '' && amount > 0 && amount < MIN_BET && (
+          <p className="mt-1 text-xs text-dump dark:text-dump-dark">
+            Minimum bet is ${MIN_BET} USDC
+          </p>
+        )}
       </div>
 
       <div className="mt-4 space-y-1.5 rounded-md border border-line bg-bg-subtle p-3">
@@ -340,14 +393,32 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               </button>
             )}
           </ConnectButton.Custom>
+        ) : notReadyReason === 'wrong-chain' ? (
+          <ConnectButton.Custom>
+            {({ openChainModal }) => (
+              <button
+                onClick={openChainModal}
+                className="press-scale w-full rounded-md bg-warning py-3 text-base font-semibold text-white transition-colors hover:opacity-90"
+                style={{ background: '#D97706' }}
+              >
+                Switch to Base to Bet
+              </button>
+            )}
+          </ConnectButton.Custom>
         ) : (
           <button
             onClick={handleBet}
-            disabled={submitting || insufficientBalance || !preview}
+            disabled={
+              submitting ||
+              insufficientBalance ||
+              !preview ||
+              amount < MIN_BET ||
+              !ready
+            }
             className={cn(
               'press-scale w-full rounded-md py-3 text-base font-semibold text-white transition-colors',
               dirCls,
-              (submitting || insufficientBalance || !preview) &&
+              (submitting || insufficientBalance || !preview || amount < MIN_BET || !ready) &&
                 'cursor-not-allowed opacity-60'
             )}
           >
@@ -355,6 +426,8 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               ? 'Placing bet…'
               : insufficientBalance
               ? 'Insufficient USDC'
+              : amount < MIN_BET
+              ? `Min $${MIN_BET}`
               : `Bet ${market.direction} — $${amount} USDC`}
           </button>
         )}
