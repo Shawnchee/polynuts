@@ -26,13 +26,14 @@ import { startDeribitFeed } from './deribitFeed';
  * Disconnects when the tab is hidden and reconnects on focus.
  */
 
-// Look back ~5 minutes (150 blocks @ 2s) for activity feed seeding.
-// Smaller window = fewer eth_getLogs calls = friendlier to free-tier
-// RPC plans (Alchemy free tier rate-limits log queries aggressively).
-const ACTIVITY_LOOKBACK_BLOCKS = 150;
-// Poll interval for the activity feed. Bumped from 30s → 90s so we don't
-// hammer the RPC; the user-initiated fills still prepend instantly via
-// the trade-panel's local prependActivity() call.
+// Alchemy's free tier hard-caps eth_getLogs to a 10-block range. We
+// scan 9 to stay safely under the limit. That's only ~18s of fills,
+// but it's enough to surface very recent activity, and on a paid RPC
+// the SDK's chunked scanner takes over and gets the larger window
+// automatically. After the first rate-limit hit we disable polling
+// entirely for the session — the user's own fills still flow into the
+// feed via the trade panel's local prependActivity().
+const ACTIVITY_LOOKBACK_BLOCKS = 9;
 const ACTIVITY_POLL_MS = 90_000;
 
 export function useLiveFeed() {
@@ -48,21 +49,19 @@ export function useLiveFeed() {
     let fillsTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
-    // Track consecutive failures so we back off if the RPC is rate-limiting
-    // (free Alchemy plans cap eth_getLogs calls per second). After 3 errors
-    // we stop retrying — the user can still see their own fills via the
-    // local prependActivity in the trade panel.
-    let consecutiveErrors = 0;
+    // Once the RPC rate-limits us we shut polling off for the rest of
+    // the session — retrying just creates console noise. The user's own
+    // fills still appear in the feed via the trade panel's local
+    // prependActivity() call, so this only affects the "see other people's
+    // fills in real time" feature.
+    let rpcDisabled = false;
     async function pumpRecentFills() {
-      if (cancelled) return;
-      if (consecutiveErrors >= 3) return;
+      if (cancelled || rpcDisabled) return;
       try {
         const client = getReadClient();
         const latest = await client.provider.getBlockNumber();
         const fromBlock = Math.max(0, latest - ACTIVITY_LOOKBACK_BLOCKS);
         const events = await client.events.getOrderFillEvents({ fromBlock });
-        consecutiveErrors = 0;
-        // Newest first; cap to reasonable feed length
         const sorted = [...events]
           .sort((a, b) =>
             b.blockNumber !== a.blockNumber
@@ -82,17 +81,19 @@ export function useLiveFeed() {
           });
         }
       } catch (err) {
-        consecutiveErrors += 1;
-        // Don't surface every RPC hiccup; the SDK logger already records it.
-        // After the 3rd error we silently stop polling for this session.
-        if (consecutiveErrors === 3) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            '[polynuts] activity feed disabled — RPC is rate-limiting. ' +
-              'Upgrade NEXT_PUBLIC_RPC_URL to a paid plan or wait until tomorrow.',
-            err
-          );
-        }
+        // Free-tier RPC rate limit (Alchemy/QuickNode/etc) — disable
+        // polling immediately to avoid spamming the console. One quiet
+        // info-level note tells future maintainers what happened without
+        // shouting at the user.
+        rpcDisabled = true;
+        // eslint-disable-next-line no-console
+        console.info(
+          '[polynuts] live activity polling disabled (RPC rate limit). ' +
+            'Your own fills will still appear; upgrade NEXT_PUBLIC_RPC_URL ' +
+            'to a paid plan to see others in real time.'
+        );
+        // Reference err so eslint doesn't complain in strict mode.
+        void err;
       }
     }
 

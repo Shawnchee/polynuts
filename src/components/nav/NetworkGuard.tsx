@@ -1,24 +1,30 @@
 'use client';
 
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, X } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
 import { POLYNUTS_CHAIN_ID } from '@/lib/sdk/clients';
 import { cn } from '@/lib/utils';
 
+const CHAIN_NAMES: Record<number, string> = {
+  1: 'Ethereum',
+  10: 'Optimism',
+  56: 'BNB Chain',
+  137: 'Polygon',
+  8453: 'Base',
+  42161: 'Arbitrum',
+  43114: 'Avalanche',
+  59144: 'Linea',
+};
+
 /**
- * Sticky top-of-page banner that warns the user when their wallet is on
+ * Loud, hard-to-miss banner that warns the user when their wallet is on
  * the wrong chain. Polynuts trades exclusively on Base mainnet — every
- * fill / approval / read assumes chainId = 8453, so anything else is
- * unusable.
+ * fill / approval / read assumes chainId = 8453.
  *
- * Renders nothing when:
- *   - the wallet isn't connected (the Connect button itself prompts chain
- *     selection via RainbowKit)
- *   - the wallet IS on Base
- *
- * Otherwise shows a non-dismissable amber banner with a one-click
- * "Switch to Base" CTA wired to wagmi's switchChain.
+ * Renders nothing when the wallet isn't connected (the Connect button
+ * itself prompts chain selection via RainbowKit) or when the wallet IS
+ * on Base. Otherwise: full-width red strip with X icon + Switch CTA.
  */
 export function NetworkGuard() {
   const { isConnected } = useAccount();
@@ -28,21 +34,28 @@ export function NetworkGuard() {
   if (!isConnected) return null;
   if (chainId === POLYNUTS_CHAIN_ID) return null;
 
+  const currentName = CHAIN_NAMES[chainId] ?? `chain ${chainId}`;
+
   return (
     <div
       role="alert"
       className={cn(
-        'sticky top-14 z-20 border-b border-warning/40',
-        'bg-[#FEF3C7] dark:bg-[#3F2A0A] text-[#78350F] dark:text-[#FBBF24]'
+        'sticky top-14 z-30 border-b border-dump',
+        // High-contrast red so the user can't miss it. Same red as the
+        // dump-direction colour so the visual language ("this is wrong")
+        // is consistent with the rest of the app.
+        'bg-dump text-white shadow-md'
       )}
     >
-      <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-3 px-6 py-2.5 text-sm">
+      <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-3 px-6 py-3 text-sm">
         <div className="flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+          <X
+            className="h-5 w-5 shrink-0 rounded-full bg-white/20 p-0.5"
+            aria-hidden
+          />
           <span>
-            <strong className="font-semibold">Wrong network.</strong>{' '}
-            Polynuts only works on Base mainnet — switch your wallet to
-            place a bet.
+            <strong className="font-bold">Wrong network — currently on {currentName}.</strong>
+            {' '}Polynuts only works on Base mainnet. Switch to place a bet.
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -50,26 +63,60 @@ export function NetworkGuard() {
             onClick={() => switchChain({ chainId: POLYNUTS_CHAIN_ID })}
             disabled={isPending}
             className={cn(
-              'press-scale rounded-md bg-warning px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90',
+              'press-scale rounded-md bg-white px-4 py-2 text-sm font-bold text-dump transition-opacity hover:opacity-90',
               isPending && 'cursor-not-allowed opacity-60'
             )}
-            style={{ background: '#D97706' }}
           >
-            {isPending ? 'Switching…' : 'Switch to Base'}
+            {isPending ? 'Switching…' : 'Switch to Base →'}
           </button>
           <ConnectButton.Custom>
             {({ openChainModal }) => (
               <button
                 onClick={openChainModal}
-                className="press-scale rounded-md border border-warning/60 px-3 py-1.5 text-xs font-medium hover:bg-warning/10"
-                style={{ borderColor: '#D97706', color: 'inherit' }}
+                className="press-scale rounded-md border border-white/40 px-3 py-2 text-xs font-medium text-white hover:bg-white/10"
               >
-                Choose network
+                Choose
               </button>
             )}
           </ConnectButton.Custom>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Always-visible compact chain chip for the top nav. Green when on Base,
+ * red when on the wrong chain. Click to switch / open the chain modal.
+ */
+export function ChainStatusChip() {
+  const { isConnected } = useAccount();
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+
+  if (!isConnected) return null;
+  const onBase = chainId === POLYNUTS_CHAIN_ID;
+  const name = CHAIN_NAMES[chainId] ?? `chain ${chainId}`;
+
+  if (onBase) {
+    return (
+      <span
+        className="hidden items-center gap-1.5 rounded-full border border-pump/40 bg-pump/10 px-2.5 py-1 text-xs font-semibold text-pump dark:text-pump-dark sm:inline-flex"
+        title="Connected to Base mainnet"
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-pump animate-pulse-glow" />
+        Base
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={() => switchChain({ chainId: POLYNUTS_CHAIN_ID })}
+      title={`On ${name} — click to switch to Base`}
+      className="press-scale inline-flex items-center gap-1.5 rounded-full border border-dump/50 bg-dump/15 px-2.5 py-1 text-xs font-semibold text-dump dark:text-dump-dark transition-colors hover:bg-dump/25"
+    >
+      <AlertTriangle className="h-3 w-3" aria-hidden />
+      {name} → Base
+    </button>
   );
 }

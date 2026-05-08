@@ -19,6 +19,26 @@ const report: Reporter = (msg, meta) => {
   }
 };
 
+/**
+ * Some SDK errors are expected on free-tier RPC plans and aren't actionable
+ * for the user. We downgrade them to info-level so they don't fill the
+ * console with red noise. The handful of patterns here cover Alchemy /
+ * QuickNode / Infura free-tier rate-limit messages.
+ */
+function isExpectedFreeTierNoise(msg: string, meta: unknown): boolean {
+  const text = (() => {
+    if (typeof meta === 'string') return msg + ' ' + meta;
+    const m = meta as { error?: { message?: string } } | undefined;
+    return msg + ' ' + (m?.error?.message ?? JSON.stringify(meta ?? {}));
+  })();
+  return (
+    /Free tier plan/i.test(text) ||
+    /eth_getLogs requests with up to a \d+ block range/i.test(text) ||
+    /rate.?limit/i.test(text) ||
+    /-32600/i.test(text) // generic JSON-RPC "request out of bounds"
+  );
+}
+
 export const polynutsLogger: ThetanutsLogger = {
   debug(msg, meta) {
     if (process.env.NODE_ENV !== 'production') {
@@ -38,6 +58,11 @@ export const polynutsLogger: ThetanutsLogger = {
     report(`[sdk warn] ${msg}`, meta);
   },
   error(msg, meta) {
+    if (isExpectedFreeTierNoise(msg, meta)) {
+      // eslint-disable-next-line no-console
+      console.info(`[sdk] ${msg} (free-tier RPC, expected)`);
+      return;
+    }
     // eslint-disable-next-line no-console
     console.error(`[sdk] ${msg}`, meta ?? '');
     report(`[sdk error] ${msg}`, meta);

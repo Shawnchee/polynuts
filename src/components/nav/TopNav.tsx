@@ -5,6 +5,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { ThemeToggle } from '@/components/nav/ThemeToggle';
+import { ChainStatusChip } from '@/components/nav/NetworkGuard';
 import { cn } from '@/lib/utils';
 
 const tabs = [
@@ -56,6 +57,7 @@ export function TopNav({ active = '/' }: { active?: string }) {
           </nav>
         </div>
         <div className="flex items-center gap-2">
+          <ChainStatusChip />
           {isConnected && bal && (
             <div className="hidden items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 sm:flex">
               <span className="label text-text-dim">USDC</span>
