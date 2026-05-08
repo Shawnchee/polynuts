@@ -174,16 +174,19 @@ function YesNoButton({
   cents: number | null;
   variant: 'yes' | 'no' | 'muted';
 }) {
+  // Matches the FeaturedHero HeroOutcome styling so the visual language
+  // of "this is a directional bet" is consistent everywhere — solid tinted
+  // bg, hue-matched border, darker fill on hover.
   const cls =
     variant === 'yes'
-      ? 'bg-pump/12 text-pump dark:bg-pump/15 dark:text-pump-dark hover:bg-pump/20 dark:hover:bg-pump/25'
+      ? 'bg-pump/15 border-pump/40 text-pump dark:bg-pump/20 dark:text-pump-dark hover:bg-pump/25 dark:hover:bg-pump/30'
       : variant === 'no'
-      ? 'bg-dump/12 text-dump dark:bg-dump/15 dark:text-dump-dark hover:bg-dump/20 dark:hover:bg-dump/25'
-      : 'bg-bg-subtle text-text-muted';
+      ? 'bg-dump/15 border-dump/40 text-dump dark:bg-dump/20 dark:text-dump-dark hover:bg-dump/25 dark:hover:bg-dump/30'
+      : 'bg-bg-subtle border-line text-text-muted';
   return (
     <div
       className={cn(
-        'flex items-center justify-between gap-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors duration-180',
+        'flex items-center justify-center gap-2 rounded-md border px-2.5 py-2 text-xs font-semibold transition-colors duration-180',
         cls
       )}
     >

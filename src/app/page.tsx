@@ -21,7 +21,13 @@ import type { MarketView } from '@/lib/sdk/markets';
 import type { ExpiryFilter } from '@/store/app';
 
 const PAGE_SIZE = 18;
-const FEATURED_COUNT = 5;
+// Maximum markets the featured hero rotates through. Hidden when the
+// filtered set has fewer than FEATURED_MIN markets — below that the
+// hero slider has nothing meaningful to rotate. The previous threshold
+// (`length <= 5`) hid the hero on every narrow expiry tab, which the
+// user flagged as "Tomorrow has no featured section".
+const FEATURED_COUNT = 10;
+const FEATURED_MIN = 2;
 
 export default function MarketsPage() {
   const { markets, isLoading, error, refetch } = useMarkets();
@@ -74,7 +80,7 @@ export default function MarketsPage() {
   // composite score formula is product-taxonomy, not a payout calculation.
   const client = getReadClient();
   const featured = useMemo(() => {
-    if (filtered.length <= FEATURED_COUNT) return [];
+    if (filtered.length < FEATURED_MIN) return [];
     const ranked = [...filtered]
       .map((m) => {
         const vol = Number(client.utils.fromUsdcDecimals(m.availableUsdc));
@@ -82,7 +88,7 @@ export default function MarketsPage() {
         return { m, score: vol * Math.max(1, Math.min(10, mult)) };
       })
       .sort((a, b) => b.score - a.score);
-    return ranked.slice(0, FEATURED_COUNT * 2).map((r) => r.m);
+    return ranked.slice(0, FEATURED_COUNT).map((r) => r.m);
   }, [filtered, multiplierByMarket, client]);
 
   const featuredIds = useMemo(
