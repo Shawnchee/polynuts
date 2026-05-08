@@ -9,6 +9,7 @@ import { Sidebar } from '@/components/markets/Sidebar';
 import { TradePanel } from '@/components/trade/TradePanel';
 import { useMarkets } from '@/lib/sdk/useOrders';
 import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
+import { getReadClient } from '@/lib/sdk/clients';
 import { useAppStore, applyFilterSort } from '@/store/app';
 import { cn } from '@/lib/utils';
 import type { MarketView } from '@/lib/sdk/markets';
@@ -49,17 +50,21 @@ export default function MarketsPage() {
   // Top-N featured strip — ranked by available volume × multiplier so we
   // surface markets with both real liquidity and meaningful upside.
   // Hidden when there's <= FEATURED_COUNT total or no multipliers loaded.
+  // Volume + multiplier both flow from SDK paths
+  // (client.utils.fromUsdcDecimals + client.option.simulatePayout); the
+  // composite score formula is product-taxonomy, not a payout calculation.
+  const client = getReadClient();
   const featured = useMemo(() => {
     if (filtered.length <= FEATURED_COUNT) return [];
     const ranked = [...filtered]
       .map((m) => {
-        const vol = Number(m.availableUsdc) / 1e6;
+        const vol = Number(client.utils.fromUsdcDecimals(m.availableUsdc));
         const mult = multiplierByMarket.get(m.id) ?? 0;
         return { m, score: vol * Math.max(1, Math.min(10, mult)) };
       })
       .sort((a, b) => b.score - a.score);
     return ranked.slice(0, FEATURED_COUNT).map((r) => r.m);
-  }, [filtered, multiplierByMarket]);
+  }, [filtered, multiplierByMarket, client]);
 
   const featuredIds = useMemo(
     () => new Set(featured.map((m) => m.id)),
