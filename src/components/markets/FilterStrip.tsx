@@ -80,10 +80,12 @@ export function FilterStrip({
           </div>
         </div>
 
-        {/* Bottom row: real expiry-bucket chips */}
+        {/* Bottom row: real expiry-bucket chips, wrapping so every bucket
+            is visible at once (was overflow-x-auto before, hiding chips
+            beyond the viewport edge). */}
         {expiryGroups.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-            <span className="label shrink-0 text-text-dim">Expires</span>
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="label mr-1 shrink-0 text-text-dim">Expires</span>
             <ChipButton
               active={expiryFilter === 'all'}
               onClick={() => setExpiryFilter('all')}
