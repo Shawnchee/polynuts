@@ -37,22 +37,25 @@
 }
 
 [data-theme='dark'] {
-  /* Cinematic dark base — gradient applied on body, not pure black */
-  --bg: 5 7 12;          /* near-black with hint of slate */
-  --bg-subtle: 9 12 18;
-  --bg-elev: 14 18 27;
-  --surface: 18 22 32;
-  --surface-hover: 24 29 41;
+  /* Polymarket-aligned slate palette — never pure black, always with a
+     subtle blue-gray cast. Each surface step is ~8% lighter than the
+     previous so the elevation hierarchy reads clearly without harsh
+     contrast. Reference: Polymarket landing screenshot. */
+  --bg: 19 23 32;          /* #131720 — deep slate, not black */
+  --bg-subtle: 24 28 39;   /* #181C27 — section dividers */
+  --bg-elev: 30 36 50;     /* #1E2432 — card surfaces */
+  --surface: 38 45 61;     /* #262D3D — panels, inputs */
+  --surface-hover: 47 56 75; /* #2F384B — hover state */
 
-  --line: 39 46 64;      /* slate-700ish */
-  --text: 237 237 239;
-  --text-muted: 157 162 175;
-  --text-dim: 100 105 119;
+  --line: 50 60 81;        /* #323C51 — borders, more visible than before */
+  --text: 237 240 246;     /* #EDF0F6 — slightly softer than pure white */
+  --text-muted: 161 170 188; /* #A1AABC — body secondary */
+  --text-dim: 116 124 142;  /* #747C8E — labels, captions */
 
   --glow-brand: rgba(96, 165, 250, 0.35);
-  --glow-pump: rgba(34, 197, 94, 0.35);
-  --glow-dump: rgba(244, 63, 94, 0.35);
-  --glow-range: rgba(167, 139, 250, 0.40);
+  --glow-pump: rgba(34, 197, 94, 0.30);
+  --glow-dump: rgba(244, 63, 94, 0.30);
+  --glow-range: rgba(167, 139, 250, 0.35);
   --glow: var(--glow-brand);
 
   --tick-from: rgba(34, 197, 94, 0.40);
@@ -103,9 +106,11 @@ body::before {
 }
 
 [data-theme='dark'] body::before {
+  /* Subtle ambient blue/violet bloom — softer than before so it doesn't
+     fight the lighter Polymarket-aligned slate base. */
   background:
-    radial-gradient(circle at 8% -8%, rgba(96, 165, 250, 0.18), transparent 50%),
-    radial-gradient(circle at 92% 108%, rgba(167, 139, 250, 0.16), transparent 50%);
+    radial-gradient(circle at 10% -5%, rgba(96, 165, 250, 0.10), transparent 45%),
+    radial-gradient(circle at 90% 105%, rgba(167, 139, 250, 0.08), transparent 45%);
 }
 
 button {
