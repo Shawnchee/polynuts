@@ -63,7 +63,10 @@ export function FeaturedHero({
 
   return (
     <div
-      className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_280px]"
+      // items-start so the hero card only takes the height it needs and
+      // doesn't stretch to match the taller Hot Markets list. Without
+      // this, the hero ends up with ~150px of dead space below.
+      className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[1fr_280px]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
@@ -127,7 +130,7 @@ function HeroCard({
     <div
       className={cn(
         'relative flex flex-col overflow-hidden rounded-xl',
-        'border border-line bg-bg-elev p-5',
+        'border border-line bg-bg-elev p-4',
         selected && 'border-text ring-2 ring-text/8'
       )}
     >
@@ -152,11 +155,11 @@ function HeroCard({
           {ASSET_GLYPH[market.asset] ?? market.asset.slice(0, 1)}
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 text-lg font-semibold leading-snug text-text">
+          <h3 className="line-clamp-2 text-md font-semibold leading-snug text-text">
             {market.question}
           </h3>
           {!isVanilla && yesCents != null && (
-            <p className={cn('num mt-1 text-base font-bold', dirColor)}>
+            <p className={cn('num mt-0.5 text-sm font-bold', dirColor)}>
               {yesCents}% chance
             </p>
           )}
@@ -195,59 +198,60 @@ function HeroCard({
         </div>
       )}
 
-      {/* Meta strip */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
-        <span>
-          <span className="num font-semibold text-text">
-            {fmtUsd(volume, { compact: true })}
-          </span>{' '}
-          volume
-        </span>
-        {multiplier != null && (
+      {/* Meta strip + carousel controls combined into a single bottom row
+          to remove the dead vertical space the user flagged. */}
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
           <span>
             <span className="num font-semibold text-text">
-              {multiplier.toFixed(2)}x
+              {fmtUsd(volume, { compact: true })}
             </span>{' '}
-            max return
+            vol
           </span>
-        )}
-        <span className="ml-auto uppercase tracking-wide">
-          {market.structureName}
-        </span>
-      </div>
-
-      {/* Carousel controls */}
-      {total > 1 && (
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <button
-            onClick={onPrev}
-            aria-label="Previous featured market"
-            className="press-scale inline-flex h-8 w-8 items-center justify-center rounded-full border border-line bg-bg-elev text-text-muted hover:bg-surface-hover hover:text-text"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <div className="flex items-center gap-1.5">
-            {Array.from({ length: total }).map((_, i) => (
-              <button
-                key={i}
-                onClick={() => onJump(i)}
-                aria-label={`Jump to featured market ${i + 1}`}
-                className={cn(
-                  'h-1.5 rounded-full transition-all duration-240',
-                  i === index ? 'w-6 bg-text' : 'w-1.5 bg-line hover:bg-text-dim'
-                )}
-              />
-            ))}
-          </div>
-          <button
-            onClick={onNext}
-            aria-label="Next featured market"
-            className="press-scale inline-flex h-8 w-8 items-center justify-center rounded-full border border-line bg-bg-elev text-text-muted hover:bg-surface-hover hover:text-text"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          {multiplier != null && (
+            <span>
+              <span className="num font-semibold text-text">
+                {multiplier.toFixed(2)}x
+              </span>{' '}
+              max
+            </span>
+          )}
+          <span className="uppercase tracking-wide text-text-dim">
+            {market.structureName}
+          </span>
         </div>
-      )}
+        {total > 1 && (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={onPrev}
+              aria-label="Previous featured market"
+              className="press-scale inline-flex h-7 w-7 items-center justify-center rounded-full border border-line text-text-muted hover:bg-surface-hover hover:text-text"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: total }).map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => onJump(i)}
+                  aria-label={`Jump to featured market ${i + 1}`}
+                  className={cn(
+                    'h-1.5 rounded-full transition-all duration-240',
+                    i === index ? 'w-5 bg-text' : 'w-1.5 bg-line hover:bg-text-dim'
+                  )}
+                />
+              ))}
+            </div>
+            <button
+              onClick={onNext}
+              aria-label="Next featured market"
+              className="press-scale inline-flex h-7 w-7 items-center justify-center rounded-full border border-line text-text-muted hover:bg-surface-hover hover:text-text"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -263,23 +267,29 @@ function HeroOutcome({
   variant: 'yes' | 'no' | 'muted';
   onClick: () => void;
 }) {
+  // Stronger fill (20% / 30%) than card cells so the buttons read as
+  // primary CTAs, not background tiles. Border in the same hue locks
+  // the boundary visually on the dark slate base.
   const cls =
     variant === 'yes'
-      ? 'bg-pump/12 text-pump dark:bg-pump/15 dark:text-pump-dark hover:bg-pump/20 dark:hover:bg-pump/25'
+      ? 'bg-pump/15 border-pump/40 text-pump dark:bg-pump/20 dark:text-pump-dark hover:bg-pump/25 dark:hover:bg-pump/30'
       : variant === 'no'
-      ? 'bg-dump/12 text-dump dark:bg-dump/15 dark:text-dump-dark hover:bg-dump/20 dark:hover:bg-dump/25'
-      : 'bg-bg-subtle text-text-muted';
+      ? 'bg-dump/15 border-dump/40 text-dump dark:bg-dump/20 dark:text-dump-dark hover:bg-dump/25 dark:hover:bg-dump/30'
+      : 'bg-bg-subtle border-line text-text-muted';
   return (
     <button
       onClick={onClick}
+      // justify-center + gap-2 keeps label+cents grouped in the middle
+      // of the button instead of pushed to opposite edges (the previous
+      // justify-between made YES and 9¢ float far apart on a wide card).
       className={cn(
-        'press-scale flex items-center justify-between gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-colors duration-180',
+        'press-scale flex items-center justify-center gap-2 rounded-md border px-4 py-3 text-base font-semibold transition-colors duration-180',
         cls
       )}
     >
       <span>{label}</span>
       {cents != null && (
-        <span className="num text-base tabular-nums">{cents}¢</span>
+        <span className="num text-base font-bold tabular-nums">{cents}¢</span>
       )}
     </button>
   );
