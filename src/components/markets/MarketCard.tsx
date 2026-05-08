@@ -135,11 +135,11 @@ export function MarketCard({
       ) : isVanilla ? (
         <div className="mt-3">
           <YesNoButton
-            label={
-              market.direction === 'PUMP'
-                ? `Bet above $${(market.strikesAsc[0] && Number(market.strikesAsc[0]) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-                : `Bet below $${(market.strikesAsc[0] && Number(market.strikesAsc[0]) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-            }
+            label={`Bet ${
+              market.direction === 'PUMP' ? 'above' : 'below'
+            } $${Number(
+              client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n)
+            ).toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
             cents={null}
             variant={market.direction === 'PUMP' ? 'yes' : 'no'}
           />

@@ -183,11 +183,11 @@ function HeroCard({
       ) : (
         <div className="mt-4">
           <HeroOutcome
-            label={
-              market.direction === 'PUMP'
-                ? `Bet above $${(Number(market.strikesAsc[0] ?? 0n) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-                : `Bet below $${(Number(market.strikesAsc[0] ?? 0n) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-            }
+            label={`Bet ${
+              market.direction === 'PUMP' ? 'above' : 'below'
+            } $${Number(
+              client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n)
+            ).toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
             cents={null}
             variant={market.direction === 'PUMP' ? 'yes' : 'no'}
             onClick={() => onSelect(market.id)}
