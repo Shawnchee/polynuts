@@ -1,30 +1,21 @@
 'use client';
 
 import { create } from 'zustand';
-import type { OrderWithSignature } from '@thetanuts-finance/thetanuts-client';
 import type { MarketView } from '@/lib/sdk/markets';
 
 export type FilterTab = 'all' | 'pump' | 'dump' | 'range' | 'soon';
 export type SortKey = 'volume' | 'newest' | 'soon' | 'payout';
+
 /**
- * Time-to-expiry framing. Each value is a max-seconds window
- * (`expiry - now <= seconds`); 'all' disables the filter.
+ * Expiry filter — either an exact unix timestamp (seconds) matching one
+ * of the live order book's expiry buckets, or 'all' to disable filtering.
  *
- * Polymarket-style short windows (5m/15m/30m/1h) are kept for when
- * makers post intraday options — the OptionBook commonly has these
- * earlier in the day but they often clear before settlement, leaving
- * 24h+ markets only. Realistic defaults land on 24h so first-load
- * isn't empty.
+ * Replaces the old "within X minutes" timeframe presets — the OptionBook
+ * has a small set of distinct expiry timestamps (8 right now, all on the
+ * 08:00 UTC cadence with one intraday) so it's clearer to filter to a
+ * specific date than guess at a window.
  */
-export type TimeframeKey =
-  | 'all'
-  | '5m'
-  | '15m'
-  | '30m'
-  | '1h'
-  | '24h'
-  | '3d'
-  | '7d';
+export type ExpiryFilter = number | 'all';
 
 export interface ActivityItem {
   id: string;
@@ -38,33 +29,30 @@ export interface ActivityItem {
 interface AppStore {
   filter: FilterTab;
   sort: SortKey;
-  timeframe: TimeframeKey;
+  expiryFilter: ExpiryFilter;
   selectedMarketId: string | null;
   activity: ActivityItem[];
   prices: { ETH?: number; BTC?: number };
 
   setFilter: (f: FilterTab) => void;
   setSort: (s: SortKey) => void;
-  setTimeframe: (t: TimeframeKey) => void;
+  setExpiryFilter: (e: ExpiryFilter) => void;
   selectMarket: (id: string | null) => void;
   prependActivity: (item: ActivityItem) => void;
   setPrice: (asset: 'ETH' | 'BTC', price: number) => void;
 }
 
-// Default to '24h' since the OptionBook's shortest-dated markets are
-// usually 24h+ at any given moment. Sub-1h chips still render so the
-// user can dial in tighter when intraday options are listed.
 export const useAppStore = create<AppStore>((set) => ({
   filter: 'all',
   sort: 'soon',
-  timeframe: '24h',
+  expiryFilter: 'all',
   selectedMarketId: null,
   activity: [],
   prices: {},
 
   setFilter: (f) => set({ filter: f }),
   setSort: (s) => set({ sort: s }),
-  setTimeframe: (t) => set({ timeframe: t }),
+  setExpiryFilter: (e) => set({ expiryFilter: e }),
   selectMarket: (id) => set({ selectedMarketId: id }),
   prependActivity: (item) =>
     set((s) => ({ activity: [item, ...s.activity].slice(0, 50) })),
@@ -72,70 +60,85 @@ export const useAppStore = create<AppStore>((set) => ({
     set((s) => ({ prices: { ...s.prices, [asset]: price } })),
 }));
 
-export const TIMEFRAME_SECONDS: Record<TimeframeKey, number | null> = {
-  all: null,
-  '5m': 5 * 60,
-  '15m': 15 * 60,
-  '30m': 30 * 60,
-  '1h': 60 * 60,
-  '24h': 24 * 60 * 60,
-  '3d': 3 * 24 * 60 * 60,
-  '7d': 7 * 24 * 60 * 60,
-};
-
-/** Ascending order — for fallback "what's the smallest window that has markets". */
-export const TIMEFRAME_ORDER: TimeframeKey[] = [
-  '5m',
-  '15m',
-  '30m',
-  '1h',
-  '24h',
-  '3d',
-  '7d',
-  'all',
-];
-
-/**
- * Find the smallest timeframe window strictly larger than `from` that
- * contains at least one market. Returns null if even 'all' is empty.
- *
- * Used by the empty-state CTA: if the user picked 5m and got 0 markets,
- * tell them "soonest is 1h 4m — try 24h" with an auto-jump button.
- */
-export function suggestNextTimeframe(
-  markets: MarketView[],
-  from: TimeframeKey
-): { timeframe: TimeframeKey; count: number } | null {
-  if (markets.length === 0) return null;
-  const fromIdx = TIMEFRAME_ORDER.indexOf(from);
-  const now = Math.floor(Date.now() / 1000);
-  for (let i = fromIdx + 1; i < TIMEFRAME_ORDER.length; i++) {
-    const tf = TIMEFRAME_ORDER[i];
-    const win = TIMEFRAME_SECONDS[tf];
-    const count =
-      win == null
-        ? markets.length
-        : markets.filter((m) => m.expiry - now <= win).length;
-    if (count > 0) return { timeframe: tf, count };
-  }
-  return null;
+export interface ExpiryGroup {
+  /** Unix seconds of the expiry */
+  ts: number;
+  /** Number of markets in this bucket */
+  count: number;
+  /** Display label — "Today 13:00 UTC", "Tomorrow 08:00", "Sat May 10", etc. */
+  label: string;
+  /** Short label for chip — "Today", "Tomorrow", "May 10" */
+  shortLabel: string;
 }
 
-/** Soonest expiry across the markets list, returned as a "in Xh Ym" label. */
-export function describeSoonestExpiry(markets: MarketView[]): string | null {
-  if (markets.length === 0) return null;
-  const now = Math.floor(Date.now() / 1000);
-  let soonest = Infinity;
+/**
+ * Group the markets array by exact expiry timestamp and produce chip
+ * labels. Returns the ascending list of buckets — the page renders one
+ * chip per bucket plus an "All" sentinel.
+ */
+export function buildExpiryGroups(markets: MarketView[]): ExpiryGroup[] {
+  const counts = new Map<number, number>();
   for (const m of markets) {
-    const dt = m.expiry - now;
-    if (dt > 0 && dt < soonest) soonest = dt;
+    counts.set(m.expiry, (counts.get(m.expiry) ?? 0) + 1);
   }
-  if (!Number.isFinite(soonest)) return null;
-  const hours = Math.floor(soonest / 3600);
-  const mins = Math.floor((soonest % 3600) / 60);
-  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
+  const sorted = [...counts.entries()].sort((a, b) => a[0] - b[0]);
+  const now = Math.floor(Date.now() / 1000);
+  return sorted.map(([ts, count]) => {
+    const { label, shortLabel } = formatExpiryLabel(ts, now);
+    return { ts, count, label, shortLabel };
+  });
+}
+
+function formatExpiryLabel(
+  ts: number,
+  nowSec: number
+): { label: string; shortLabel: string } {
+  const d = new Date(ts * 1000);
+  const dt = ts - nowSec;
+  const time = d.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+    hour12: false,
+  });
+
+  // Same UTC calendar day → "Today HH:MM"
+  const now = new Date(nowSec * 1000);
+  const sameDay =
+    d.getUTCFullYear() === now.getUTCFullYear() &&
+    d.getUTCMonth() === now.getUTCMonth() &&
+    d.getUTCDate() === now.getUTCDate();
+  if (sameDay) {
+    if (dt < 60 * 60) {
+      const mins = Math.floor(dt / 60);
+      return { label: `Today ${time} UTC (${mins}m)`, shortLabel: `Today ${time}` };
+    }
+    return { label: `Today ${time} UTC`, shortLabel: `Today ${time}` };
+  }
+
+  // Tomorrow UTC
+  const tomorrow = new Date(now.getTime() + 86400_000);
+  const isTomorrow =
+    d.getUTCFullYear() === tomorrow.getUTCFullYear() &&
+    d.getUTCMonth() === tomorrow.getUTCMonth() &&
+    d.getUTCDate() === tomorrow.getUTCDate();
+  if (isTomorrow) {
+    return { label: `Tomorrow ${time} UTC`, shortLabel: `Tomorrow ${time}` };
+  }
+
+  // Otherwise: "Sat May 10" / longer "Sat May 10, 08:00 UTC"
+  const longDate = d.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+  const shortDate = d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+  return { label: `${longDate}, ${time} UTC`, shortLabel: shortDate };
 }
 
 /**
@@ -152,7 +155,7 @@ export function applyFilterSort(
   filter: FilterTab,
   sort: SortKey,
   getMultiplier?: (m: MarketView) => number | null,
-  timeframe: TimeframeKey = 'all'
+  expiryFilter: ExpiryFilter = 'all'
 ): MarketView[] {
   let out = [...markets];
 
@@ -165,11 +168,9 @@ export function applyFilterSort(
     out = out.filter((m) => m.expiry < cutoff);
   }
 
-  // Timeframe — Polymarket-style "expires within X minutes" preset
-  const window = TIMEFRAME_SECONDS[timeframe];
-  if (window != null) {
-    const now = Math.floor(Date.now() / 1000);
-    out = out.filter((m) => m.expiry - now <= window);
+  // Expiry filter — exact-match against a real bucket on the order book
+  if (expiryFilter !== 'all') {
+    out = out.filter((m) => m.expiry === expiryFilter);
   }
 
   switch (sort) {

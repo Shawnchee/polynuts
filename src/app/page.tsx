@@ -13,12 +13,11 @@ import { getReadClient } from '@/lib/sdk/clients';
 import {
   useAppStore,
   applyFilterSort,
-  suggestNextTimeframe,
-  describeSoonestExpiry,
+  buildExpiryGroups,
 } from '@/store/app';
 import { cn } from '@/lib/utils';
 import type { MarketView } from '@/lib/sdk/markets';
-import type { TimeframeKey } from '@/store/app';
+import type { ExpiryFilter } from '@/store/app';
 
 const PAGE_SIZE = 18;
 const FEATURED_COUNT = 5;
@@ -27,10 +26,22 @@ export default function MarketsPage() {
   const { markets, isLoading, error, refetch } = useMarkets();
   const filter = useAppStore((s) => s.filter);
   const sort = useAppStore((s) => s.sort);
-  const timeframe = useAppStore((s) => s.timeframe);
-  const setTimeframe = useAppStore((s) => s.setTimeframe);
+  const expiryFilter = useAppStore((s) => s.expiryFilter);
+  const setExpiryFilter = useAppStore((s) => s.setExpiryFilter);
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
+
+  // Real expiry buckets, derived from the live order book.
+  const expiryGroups = useMemo(() => buildExpiryGroups(markets), [markets]);
+
+  // Auto-reset to 'all' if the user's selected expiry bucket has expired
+  // out of the order book (e.g. the only intraday market they had filtered
+  // to just settled).
+  useEffect(() => {
+    if (expiryFilter === 'all') return;
+    const stillExists = expiryGroups.some((g) => g.ts === expiryFilter);
+    if (!stillExists) setExpiryFilter('all');
+  }, [expiryGroups, expiryFilter, setExpiryFilter]);
 
   const binaries = useMarketBinaryFramings(markets);
   const multiplierByMarket = useMemo(() => {
@@ -49,9 +60,9 @@ export default function MarketsPage() {
         filter,
         sort,
         (m) => multiplierByMarket.get(m.id) ?? null,
-        timeframe
+        expiryFilter
       ),
-    [markets, filter, sort, multiplierByMarket, timeframe]
+    [markets, filter, sort, multiplierByMarket, expiryFilter]
   );
 
   // Top-N featured strip — ranked by available volume × multiplier so we
@@ -87,7 +98,7 @@ export default function MarketsPage() {
   const [page, setPage] = useState(1);
   useEffect(() => {
     setPage(1);
-  }, [filter, sort, timeframe]);
+  }, [filter, sort, expiryFilter]);
 
   const totalPages = Math.max(1, Math.ceil(rest.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -102,7 +113,7 @@ export default function MarketsPage() {
   return (
     <div className="min-h-dvh">
       <TopNav active="/" />
-      <FilterStrip count={filtered.length} />
+      <FilterStrip count={filtered.length} expiryGroups={expiryGroups} />
 
       <main className="mx-auto max-w-page px-6 py-6">
         <div className="flex flex-col gap-6 lg:flex-row">
@@ -115,10 +126,10 @@ export default function MarketsPage() {
               />
             )}
             {!isLoading && !error && filtered.length === 0 && (
-              <TimeframeEmptyState
-                markets={markets}
-                timeframe={timeframe}
-                onJump={setTimeframe}
+              <ExpiryEmptyState
+                hasMarkets={markets.length > 0}
+                onResetExpiry={() => setExpiryFilter('all')}
+                expiryFilter={expiryFilter}
               />
             )}
 
@@ -280,20 +291,16 @@ function SkeletonGrid() {
   );
 }
 
-function TimeframeEmptyState({
-  markets,
-  timeframe,
-  onJump,
+function ExpiryEmptyState({
+  hasMarkets,
+  onResetExpiry,
+  expiryFilter,
 }: {
-  markets: MarketView[];
-  timeframe: TimeframeKey;
-  onJump: (t: TimeframeKey) => void;
+  hasMarkets: boolean;
+  onResetExpiry: () => void;
+  expiryFilter: ExpiryFilter;
 }) {
-  // Compute on every render — cheap (linear scan over 300-ish markets).
-  const next = suggestNextTimeframe(markets, timeframe);
-  const soonest = describeSoonestExpiry(markets);
-
-  if (markets.length === 0) {
+  if (!hasMarkets) {
     return (
       <div className="flex h-64 animate-fade-in flex-col items-center justify-center rounded-xl border border-dashed border-line bg-bg-elev">
         <p className="text-md font-medium text-text">No live markets right now</p>
@@ -304,34 +311,25 @@ function TimeframeEmptyState({
     );
   }
 
+  // Has markets but the user's direction × expiry combo is empty.
   return (
     <div className="flex h-64 animate-fade-in flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line bg-bg-elev px-6 text-center">
       <p className="text-md font-medium text-text">
-        No markets expiring within{' '}
-        <span className="num">{labelForTimeframe(timeframe)}</span>
+        No markets match your filters
       </p>
-      {soonest && (
-        <p className="text-sm text-text-muted">
-          Soonest market expires in{' '}
-          <span className="num font-semibold text-text">{soonest}</span>
-        </p>
-      )}
-      {next && (
+      <p className="text-sm text-text-muted">
+        Try a different direction or expiry.
+      </p>
+      {expiryFilter !== 'all' && (
         <button
-          onClick={() => onJump(next.timeframe)}
+          onClick={onResetExpiry}
           className="press-scale mt-2 inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark transition-colors"
         >
-          Show {next.count} {next.count === 1 ? 'market' : 'markets'} within{' '}
-          <span className="num">{labelForTimeframe(next.timeframe)}</span>
+          Show all expiries
         </button>
       )}
     </div>
   );
-}
-
-function labelForTimeframe(tf: TimeframeKey): string {
-  if (tf === 'all') return 'any time';
-  return tf;
 }
 
 function ErrorState({ msg, onRetry }: { msg: string; onRetry: () => void }) {
