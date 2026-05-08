@@ -26,9 +26,12 @@ import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { DirectionTag } from '@/components/ui/DirectionTag';
 import { ShareWinCard } from '@/components/share/ShareWinCard';
-import { PayoutVisualizer } from '@/components/trade/PayoutVisualizer';
+import { PayoutChart } from '@/components/trade/PayoutChart';
+import { TradingViewChart } from '@/components/trade/TradingViewChart';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
+
+type ChartTab = 'payout' | 'spot';
 
 // Size presets — $1 / $5 / $10 / $25 / $100. The custom input below
 // accepts any value as the user types and validates >= MIN_BET only
@@ -369,11 +372,9 @@ export function TradePanel({ market }: { market: MarketView | null }) {
 
       {previewError && <p className="mt-2 text-sm text-dump">{previewError}</p>}
 
-      {preview && (
-        <div className="mt-3">
-          <PayoutVisualizer market={market} numContracts={preview.numContracts} />
-        </div>
-      )}
+      <div className="mt-3">
+        <ChartSwitcher market={market} preview={preview} amount={amount} />
+      </div>
 
       {preview?.capped && (
         <p className="mt-2 text-xs text-text-muted">
@@ -442,6 +443,69 @@ export function TradePanel({ market }: { market: MarketView | null }) {
 
       <p className="mt-3 text-center text-xs text-text-dim">Powered by Thetanuts V4</p>
     </div>
+  );
+}
+
+/**
+ * Tab switcher for the chart slot below the summary — Payout P/L curve
+ * (default) vs TradingView spot chart for the underlying. Both rely on
+ * SDK-derived data only; the TradingView widget is the only place we
+ * reach for an external feed (Coinbase/Binance via TV's free embed).
+ */
+function ChartSwitcher({
+  market,
+  preview,
+  amount,
+}: {
+  market: MarketView;
+  preview: PreviewState | null;
+  amount: number;
+}) {
+  const [tab, setTab] = useState<ChartTab>('payout');
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-1 rounded-md border border-line bg-bg-subtle p-0.5">
+        <TabButton active={tab === 'payout'} onClick={() => setTab('payout')}>
+          Payout
+        </TabButton>
+        <TabButton active={tab === 'spot'} onClick={() => setTab('spot')}>
+          {market.asset} chart
+        </TabButton>
+      </div>
+      {tab === 'payout' ? (
+        <PayoutChart
+          market={market}
+          numContracts={preview?.numContracts ?? null}
+          betUsd={amount}
+        />
+      ) : (
+        <TradingViewChart asset={market.asset} height={240} />
+      )}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'press-scale flex-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors duration-120',
+        active
+          ? 'bg-text text-bg-elev'
+          : 'text-text-muted hover:text-text'
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
