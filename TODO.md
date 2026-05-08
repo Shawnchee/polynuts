@@ -25,7 +25,7 @@ not a graveyard.
 ## V1.1 (next sprint)
 
 ### Share / virality
-- [ ] **Win-card share button** — `/api/win-card` route is live and emits a 1200×630 PNG. Wire it into the post-fill toast: "Share your win" → opens X/Farcaster intent with the OG URL. URL params must come from `useFillPayout` / `useMarketBinaryFraming` (already SDK-derived) — don't recompute from broken homegrown math.
+- [ ] **Settled-win share** — extend the share flow to surface inline on `/portfolio` for settled positions with positive PnL (matches the PRD's "I just won $X" framing). Currently we only share `pending` bets at fill time — settled wins need to map a `TradeHistory.settle` event back to its original bet amount to compute the win figure.
 - [ ] **`/profile/:address`** — public trader page with stats + recent bets + shareable card. Pulls from `getUserPositionsFromIndexer` + `getUserHistoryFromIndexer`.
 
 ### Polish
