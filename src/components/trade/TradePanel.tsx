@@ -25,6 +25,7 @@ import { useSignerClient } from '@/lib/sdk/useSignerClient';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { DirectionTag } from '@/components/ui/DirectionTag';
+import { ShareWinCard } from '@/components/share/ShareWinCard';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 
@@ -139,14 +140,47 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       const txHash = receipt?.hash;
       const url = txHash ? `${explorer}/tx/${txHash}` : explorer;
 
+      // Build the share-card args from the SDK-derived numbers we have.
+      // payoutAtFill comes from useFillPayout (client.option.simulatePayout) —
+      // it's the max payout in 6-dec USDC. Fall back to amount × multiplier
+      // when binary framing is unavailable (vanilla case).
+      const shareArgs = market
+        ? {
+            result: 'pending' as const,
+            bet: amount,
+            payout:
+              payoutAtFill != null
+                ? Number(readClient.utils.fromUsdcDecimals(payoutAtFill))
+                : binary?.multiplier
+                ? Math.round(amount * binary.multiplier)
+                : amount,
+            direction: market.direction,
+            question: market.question,
+            asset: market.asset,
+          }
+        : null;
+
       toast.success(
-        <span>
-          Bet placed!{' '}
-          <a className="text-brand underline" href={url} target="_blank" rel="noreferrer">
-            View on Basescan
-          </a>
-        </span>,
-        { id: t, duration: 8000 }
+        <div className="flex flex-col gap-2">
+          <span>
+            Bet placed!{' '}
+            <a
+              className="text-brand underline"
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View on Basescan
+            </a>
+          </span>
+          {shareArgs && shareArgs.payout > shareArgs.bet && (
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-text-muted">Brag a little —</span>
+              <ShareWinCard args={shareArgs} size="sm" />
+            </div>
+          )}
+        </div>,
+        { id: t, duration: 12_000 }
       );
 
       prependActivity({

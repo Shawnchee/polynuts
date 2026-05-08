@@ -6,7 +6,13 @@ export const runtime = 'edge';
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
 
-  const result = (params.get('result') ?? 'win').toLowerCase(); // win | loss
+  // result:
+  //   win     → settled winning position; green WIN badge + "+$X" headline
+  //   loss    → settled losing position; red LOSS badge
+  //   pending → open bet just placed; direction-tinted "BETTING" badge,
+  //             headline reads as a potential payout ("If correct: +$X")
+  const result = (params.get('result') ?? 'win').toLowerCase();
+  const isPending = result === 'pending';
   const won = result === 'win';
   const bet = clampNumber(params.get('bet'), 0, 9_999_999) ?? 100;
   const payout = clampNumber(params.get('payout'), 0, 99_999_999) ?? Math.round(bet * 1.61);
@@ -20,10 +26,17 @@ export async function GET(req: NextRequest) {
       : 'ETH pumped');
   const multiplier = bet > 0 ? (payout / bet).toFixed(2) : '—';
 
-  const accent = won ? '#16A34A' : '#DC2626';
-  const accentBg = won ? '#F0FDF4' : '#FEF2F2';
   const dirAccent =
     direction === 'PUMP' ? '#16A34A' : direction === 'DUMP' ? '#DC2626' : '#7C3AED';
+  const dirAccentBg =
+    direction === 'PUMP' ? '#F0FDF4' : direction === 'DUMP' ? '#FEF2F2' : '#F5F3FF';
+  // Pending shares track the direction colour; settled shares use win/loss
+  // colours so the user instantly reads outcome.
+  const accent = isPending ? dirAccent : won ? '#16A34A' : '#DC2626';
+  const accentBg = isPending ? dirAccentBg : won ? '#F0FDF4' : '#FEF2F2';
+  const badgeLabel = isPending ? 'BETTING' : won ? 'WIN' : 'LOSS';
+  const amountSign = isPending ? '+' : won ? '+' : '−';
+  const amountLabel = isPending ? 'Win up to' : won ? 'Won' : 'Lost';
 
   return new ImageResponse(
     (
@@ -77,7 +90,7 @@ export async function GET(req: NextRequest) {
                 color: accent,
               }}
             >
-              {won ? 'WIN' : 'LOSS'}
+              {badgeLabel}
             </span>
             <span>{direction}</span>
           </div>
@@ -93,7 +106,7 @@ export async function GET(req: NextRequest) {
               letterSpacing: '-3px',
             }}
           >
-            {won ? '+' : '−'}${formatNumber(payout)}
+            {amountSign}${formatNumber(payout)}
           </div>
 
           <div
@@ -132,7 +145,7 @@ export async function GET(req: NextRequest) {
             </span>
             <span style={{ color: '#A1A1AA' }}>→</span>
             <span style={{ display: 'flex', gap: 8 }}>
-              <span style={{ color: '#A1A1AA' }}>Won</span>
+              <span style={{ color: '#A1A1AA' }}>{amountLabel}</span>
               <span
                 style={{
                   color: accent,
