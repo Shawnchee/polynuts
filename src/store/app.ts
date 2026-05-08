@@ -7,10 +7,24 @@ import type { MarketView } from '@/lib/sdk/markets';
 export type FilterTab = 'all' | 'pump' | 'dump' | 'range' | 'soon';
 export type SortKey = 'volume' | 'newest' | 'soon' | 'payout';
 /**
- * Polymarket-style time-to-expiry framing. Each value is a max-seconds
- * window (`expiry - now <= seconds`); 'all' disables the filter.
+ * Time-to-expiry framing. Each value is a max-seconds window
+ * (`expiry - now <= seconds`); 'all' disables the filter.
+ *
+ * Polymarket-style short windows (5m/15m/30m/1h) are kept for when
+ * makers post intraday options — the OptionBook commonly has these
+ * earlier in the day but they often clear before settlement, leaving
+ * 24h+ markets only. Realistic defaults land on 24h so first-load
+ * isn't empty.
  */
-export type TimeframeKey = 'all' | '5m' | '15m' | '30m' | '1h' | '24h';
+export type TimeframeKey =
+  | 'all'
+  | '5m'
+  | '15m'
+  | '30m'
+  | '1h'
+  | '24h'
+  | '3d'
+  | '7d';
 
 export interface ActivityItem {
   id: string;
@@ -37,12 +51,13 @@ interface AppStore {
   setPrice: (asset: 'ETH' | 'BTC', price: number) => void;
 }
 
-// Default to '1h' so the first-load grid is biased toward Polymarket-style
-// short-dated markets (the project's product positioning per the PRD).
+// Default to '24h' since the OptionBook's shortest-dated markets are
+// usually 24h+ at any given moment. Sub-1h chips still render so the
+// user can dial in tighter when intraday options are listed.
 export const useAppStore = create<AppStore>((set) => ({
   filter: 'all',
   sort: 'soon',
-  timeframe: '1h',
+  timeframe: '24h',
   selectedMarketId: null,
   activity: [],
   prices: {},
@@ -64,6 +79,8 @@ const TIMEFRAME_SECONDS: Record<TimeframeKey, number | null> = {
   '30m': 30 * 60,
   '1h': 60 * 60,
   '24h': 24 * 60 * 60,
+  '3d': 3 * 24 * 60 * 60,
+  '7d': 7 * 24 * 60 * 60,
 };
 
 /**

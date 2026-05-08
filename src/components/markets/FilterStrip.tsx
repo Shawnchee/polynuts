@@ -21,6 +21,8 @@ const timeframes: { id: TimeframeKey; label: string }[] = [
   { id: '30m', label: '30m' },
   { id: '1h', label: '1h' },
   { id: '24h', label: '24h' },
+  { id: '3d', label: '3d' },
+  { id: '7d', label: '7d' },
   { id: 'all', label: 'All' },
 ];
 
