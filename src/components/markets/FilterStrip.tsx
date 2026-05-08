@@ -1,6 +1,11 @@
 'use client';
 
-import { useAppStore, type FilterTab, type SortKey } from '@/store/app';
+import {
+  useAppStore,
+  type FilterTab,
+  type SortKey,
+  type TimeframeKey,
+} from '@/store/app';
 import { cn } from '@/lib/utils';
 
 const tabs: { id: FilterTab; label: string }[] = [
@@ -8,13 +13,21 @@ const tabs: { id: FilterTab; label: string }[] = [
   { id: 'pump', label: 'PUMP' },
   { id: 'dump', label: 'DUMP' },
   { id: 'range', label: 'RANGE' },
-  { id: 'soon', label: 'Ending Soon' },
+];
+
+const timeframes: { id: TimeframeKey; label: string }[] = [
+  { id: '5m', label: '5m' },
+  { id: '15m', label: '15m' },
+  { id: '30m', label: '30m' },
+  { id: '1h', label: '1h' },
+  { id: '24h', label: '24h' },
+  { id: 'all', label: 'All' },
 ];
 
 const sorts: { id: SortKey; label: string }[] = [
+  { id: 'soon', label: 'Ending Soon' },
   { id: 'volume', label: 'Most Volume' },
   { id: 'newest', label: 'Newest' },
-  { id: 'soon', label: 'Ending Soon' },
   { id: 'payout', label: 'Highest Payout' },
 ];
 
@@ -27,10 +40,12 @@ const tabAccent: Record<FilterTab, string> = {
 };
 
 export function FilterStrip({ count }: { count: number }) {
-  const { filter, sort, setFilter, setSort } = useAppStore();
+  const { filter, sort, timeframe, setFilter, setSort, setTimeframe } =
+    useAppStore();
   return (
     <div className="border-b border-line bg-bg-elev/60 backdrop-blur">
-      <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-3 px-6 py-3">
+      <div className="mx-auto flex max-w-page flex-col gap-2 px-6 py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+        {/* Direction tabs */}
         <div className="flex flex-wrap items-center gap-1.5">
           {tabs.map((t) => (
             <button
@@ -47,6 +62,29 @@ export function FilterStrip({ count }: { count: number }) {
             </button>
           ))}
         </div>
+
+        {/* Timeframe chips — Polymarket-style short windows */}
+        <div className="flex items-center gap-2">
+          <span className="label text-text-dim hidden sm:inline">Expires in</span>
+          <div className="flex items-center gap-1 rounded-md border border-line bg-surface p-1">
+            {timeframes.map((tf) => (
+              <button
+                key={tf.id}
+                onClick={() => setTimeframe(tf.id)}
+                className={cn(
+                  'press-scale rounded-sm px-2.5 py-1 text-xs font-semibold transition-colors duration-120',
+                  timeframe === tf.id
+                    ? 'bg-text text-bg-elev'
+                    : 'text-text-muted hover:text-text'
+                )}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Count + sort */}
         <div className="flex items-center gap-3">
           <span className="num text-sm text-text-muted">
             <span className="num font-semibold text-text">{count}</span> markets

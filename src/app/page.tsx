@@ -15,6 +15,7 @@ export default function MarketsPage() {
   const { markets, isLoading, error, refetch } = useMarkets();
   const filter = useAppStore((s) => s.filter);
   const sort = useAppStore((s) => s.sort);
+  const timeframe = useAppStore((s) => s.timeframe);
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
 
@@ -32,8 +33,14 @@ export default function MarketsPage() {
 
   const filtered = useMemo(
     () =>
-      applyFilterSort(markets, filter, sort, (m) => multiplierByMarket.get(m.id) ?? null),
-    [markets, filter, sort, multiplierByMarket]
+      applyFilterSort(
+        markets,
+        filter,
+        sort,
+        (m) => multiplierByMarket.get(m.id) ?? null,
+        timeframe
+      ),
+    [markets, filter, sort, multiplierByMarket, timeframe]
   );
 
   const selectedMarket =
