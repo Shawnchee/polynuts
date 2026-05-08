@@ -1,15 +1,22 @@
 'use client';
 
 import { useAppStore } from '@/store/app';
+import { useMarketData } from '@/lib/sdk/useOrders';
 import { cn } from '@/lib/utils';
 
 export function Sidebar() {
   const activity = useAppStore((s) => s.activity);
   const livePrices = useAppStore((s) => s.prices);
+  // Fall back to the Thetanuts indexer's market-data feed when Deribit's
+  // WS is silent (e.g. tab just opened or socket reconnecting). MCP-verified
+  // to return live ETH/BTC/SOL/XRP/BNB/AVAX/DOGE prices on Base.
+  const { data: indexerPrices } = useMarketData();
+  const eth = livePrices.ETH ?? indexerPrices?.prices?.ETH;
+  const btc = livePrices.BTC ?? indexerPrices?.prices?.BTC;
 
   return (
     <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-[280px]">
-      <PriceTickers eth={livePrices.ETH} btc={livePrices.BTC} />
+      <PriceTickers eth={eth} btc={btc} />
       <Panel title="Live Activity" subtitle="On-chain fills">
         <div className="scrollbar-thin max-h-[420px] overflow-y-auto">
           {activity.length === 0 ? (
