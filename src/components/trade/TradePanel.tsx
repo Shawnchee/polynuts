@@ -32,6 +32,7 @@ import { TradingViewChart } from '@/components/trade/TradingViewChart';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
+import { ChevronDown } from 'lucide-react';
 
 type ChartTab = 'payout' | 'spot';
 
@@ -398,39 +399,77 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         )}
       </div>
 
-      <div className="mt-4 space-y-1.5 rounded-md border border-line bg-bg-subtle p-3">
-        <SummaryRow label="You bet" value={`$${amount} USDC`} />
-        <SummaryRow
-          label="Contracts"
-          value={
-            preview
-              ? Number(
-                  readClient.utils.formatAmount(preview.numContracts, 6, 4)
-                ).toLocaleString('en-US', { maximumFractionDigits: 4 })
-              : '—'
-          }
-        />
+      {/* Hero payout — the single most important number on the panel.
+          Big, green, prominent. The user's "if I bet $X what do I win?"
+          mental model gets a direct answer here without scanning a list. */}
+      <div className="mt-4">
         {!isVanilla ? (
-          <>
-            <SummaryRow
-              label="If correct"
-              value={payoutUsdcStr ?? '…'}
-              highlight={!!payoutUsdcStr}
-            />
-            <SummaryRow
-              label="Return"
-              value={binary?.multiplier ? `${binary.multiplier.toFixed(2)}x` : '…'}
-            />
-          </>
+          <div
+            className={cn(
+              'relative overflow-hidden rounded-lg border p-4 text-center transition-colors duration-180',
+              payoutUsdcStr
+                ? 'border-pump/40 bg-pump/5 dark:bg-pump/10'
+                : 'border-line bg-bg-subtle'
+            )}
+          >
+            <div className="label text-text-dim">If correct, you win</div>
+            <div
+              className={cn(
+                'num mt-1 text-2xl font-bold tabular-nums tracking-tight',
+                payoutUsdcStr ? 'text-pump dark:text-pump-dark' : 'text-text-dim'
+              )}
+            >
+              {payoutUsdcStr ?? '$—'}
+            </div>
+            {binary?.multiplier && (
+              <div className="num mt-1 text-xs font-semibold tabular-nums text-text-muted">
+                {binary.multiplier.toFixed(2)}x return ·{' '}
+                {Math.round(binary.yesProbability * 100)}% implied probability
+              </div>
+            )}
+          </div>
         ) : (
-          <SummaryRow label="Payoff" value="open-ended (vanilla option)" mono={false} />
+          <div className="rounded-lg border border-line bg-bg-subtle p-4 text-center">
+            <div className="label text-text-dim">Vanilla option</div>
+            <div className="num mt-1 text-base font-semibold text-text">
+              Open-ended payoff
+            </div>
+            <div className="mt-1 text-xs text-text-muted">
+              See the chart below for settlement-conditional P/L
+            </div>
+          </div>
         )}
-        <SummaryRow label="Structure" value={market.structureName} mono={false} />
-        <SummaryRow
-          label="Settles"
-          value={new Date(market.expiry * 1000).toUTCString().slice(17, 22) + ' UTC'}
-        />
       </div>
+
+      {/* Collapsed details — progressive disclosure. The user already
+          sees direction, question, amount, payout. The structure +
+          contract count + settlement time are tertiary info, hidden
+          behind a toggle so the primary path stays clean. */}
+      <details className="mt-3 rounded-md border border-line bg-bg-subtle group">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-medium text-text-muted hover:text-text">
+          <span>Trade details</span>
+          <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-1.5 border-t border-line px-3 py-2">
+          <SummaryRow label="You bet" value={`$${amount} USDC`} />
+          <SummaryRow
+            label="Contracts"
+            value={
+              preview
+                ? Number(
+                    readClient.utils.formatAmount(preview.numContracts, 6, 4)
+                  ).toLocaleString('en-US', { maximumFractionDigits: 4 })
+                : '—'
+            }
+          />
+          <SummaryRow label="Structure" value={market.structureName} mono={false} />
+          <SummaryRow
+            label="Settles"
+            value={new Date(market.expiry * 1000).toUTCString().slice(17, 22) + ' UTC'}
+            mono={false}
+          />
+        </div>
+      </details>
 
       {previewError && <p className="mt-2 text-sm text-dump">{previewError}</p>}
 
