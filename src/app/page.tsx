@@ -10,9 +10,15 @@ import { TradePanel } from '@/components/trade/TradePanel';
 import { useMarkets } from '@/lib/sdk/useOrders';
 import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
-import { useAppStore, applyFilterSort } from '@/store/app';
+import {
+  useAppStore,
+  applyFilterSort,
+  suggestNextTimeframe,
+  describeSoonestExpiry,
+} from '@/store/app';
 import { cn } from '@/lib/utils';
 import type { MarketView } from '@/lib/sdk/markets';
+import type { TimeframeKey } from '@/store/app';
 
 const PAGE_SIZE = 18;
 const FEATURED_COUNT = 5;
@@ -22,6 +28,7 @@ export default function MarketsPage() {
   const filter = useAppStore((s) => s.filter);
   const sort = useAppStore((s) => s.sort);
   const timeframe = useAppStore((s) => s.timeframe);
+  const setTimeframe = useAppStore((s) => s.setTimeframe);
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
 
@@ -107,7 +114,13 @@ export default function MarketsPage() {
                 onRetry={() => refetch()}
               />
             )}
-            {!isLoading && !error && filtered.length === 0 && <EmptyState />}
+            {!isLoading && !error && filtered.length === 0 && (
+              <TimeframeEmptyState
+                markets={markets}
+                timeframe={timeframe}
+                onJump={setTimeframe}
+              />
+            )}
 
             {!isLoading && featured.length > 0 && (
               <FeaturedStrip
@@ -267,15 +280,58 @@ function SkeletonGrid() {
   );
 }
 
-function EmptyState() {
+function TimeframeEmptyState({
+  markets,
+  timeframe,
+  onJump,
+}: {
+  markets: MarketView[];
+  timeframe: TimeframeKey;
+  onJump: (t: TimeframeKey) => void;
+}) {
+  // Compute on every render — cheap (linear scan over 300-ish markets).
+  const next = suggestNextTimeframe(markets, timeframe);
+  const soonest = describeSoonestExpiry(markets);
+
+  if (markets.length === 0) {
+    return (
+      <div className="flex h-64 animate-fade-in flex-col items-center justify-center rounded-xl border border-dashed border-line bg-bg-elev">
+        <p className="text-md font-medium text-text">No live markets right now</p>
+        <p className="mt-1 text-sm text-text-muted">
+          New markets show up as makers post orders. Refreshes every 30 seconds.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-64 animate-fade-in flex-col items-center justify-center rounded-xl border border-dashed border-line bg-bg-elev">
-      <p className="text-md font-medium text-text">No live markets right now</p>
-      <p className="mt-1 text-sm text-text-muted">
-        New markets show up as makers post orders. Refreshes every 30 seconds.
+    <div className="flex h-64 animate-fade-in flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line bg-bg-elev px-6 text-center">
+      <p className="text-md font-medium text-text">
+        No markets expiring within{' '}
+        <span className="num">{labelForTimeframe(timeframe)}</span>
       </p>
+      {soonest && (
+        <p className="text-sm text-text-muted">
+          Soonest market expires in{' '}
+          <span className="num font-semibold text-text">{soonest}</span>
+        </p>
+      )}
+      {next && (
+        <button
+          onClick={() => onJump(next.timeframe)}
+          className="press-scale mt-2 inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark transition-colors"
+        >
+          Show {next.count} {next.count === 1 ? 'market' : 'markets'} within{' '}
+          <span className="num">{labelForTimeframe(next.timeframe)}</span>
+        </button>
+      )}
     </div>
   );
+}
+
+function labelForTimeframe(tf: TimeframeKey): string {
+  if (tf === 'all') return 'any time';
+  return tf;
 }
 
 function ErrorState({ msg, onRetry }: { msg: string; onRetry: () => void }) {

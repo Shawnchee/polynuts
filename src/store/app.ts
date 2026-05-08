@@ -72,7 +72,7 @@ export const useAppStore = create<AppStore>((set) => ({
     set((s) => ({ prices: { ...s.prices, [asset]: price } })),
 }));
 
-const TIMEFRAME_SECONDS: Record<TimeframeKey, number | null> = {
+export const TIMEFRAME_SECONDS: Record<TimeframeKey, number | null> = {
   all: null,
   '5m': 5 * 60,
   '15m': 15 * 60,
@@ -82,6 +82,61 @@ const TIMEFRAME_SECONDS: Record<TimeframeKey, number | null> = {
   '3d': 3 * 24 * 60 * 60,
   '7d': 7 * 24 * 60 * 60,
 };
+
+/** Ascending order — for fallback "what's the smallest window that has markets". */
+export const TIMEFRAME_ORDER: TimeframeKey[] = [
+  '5m',
+  '15m',
+  '30m',
+  '1h',
+  '24h',
+  '3d',
+  '7d',
+  'all',
+];
+
+/**
+ * Find the smallest timeframe window strictly larger than `from` that
+ * contains at least one market. Returns null if even 'all' is empty.
+ *
+ * Used by the empty-state CTA: if the user picked 5m and got 0 markets,
+ * tell them "soonest is 1h 4m — try 24h" with an auto-jump button.
+ */
+export function suggestNextTimeframe(
+  markets: MarketView[],
+  from: TimeframeKey
+): { timeframe: TimeframeKey; count: number } | null {
+  if (markets.length === 0) return null;
+  const fromIdx = TIMEFRAME_ORDER.indexOf(from);
+  const now = Math.floor(Date.now() / 1000);
+  for (let i = fromIdx + 1; i < TIMEFRAME_ORDER.length; i++) {
+    const tf = TIMEFRAME_ORDER[i];
+    const win = TIMEFRAME_SECONDS[tf];
+    const count =
+      win == null
+        ? markets.length
+        : markets.filter((m) => m.expiry - now <= win).length;
+    if (count > 0) return { timeframe: tf, count };
+  }
+  return null;
+}
+
+/** Soonest expiry across the markets list, returned as a "in Xh Ym" label. */
+export function describeSoonestExpiry(markets: MarketView[]): string | null {
+  if (markets.length === 0) return null;
+  const now = Math.floor(Date.now() / 1000);
+  let soonest = Infinity;
+  for (const m of markets) {
+    const dt = m.expiry - now;
+    if (dt > 0 && dt < soonest) soonest = dt;
+  }
+  if (!Number.isFinite(soonest)) return null;
+  const hours = Math.floor(soonest / 3600);
+  const mins = Math.floor((soonest % 3600) / 60);
+  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
 
 /**
  * Apply user-selected filter + sort to the markets list.
