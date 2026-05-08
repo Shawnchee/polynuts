@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { TopNav } from '@/components/nav/TopNav';
+import { NetworkGuard } from '@/components/nav/NetworkGuard';
 
 export function PageShell({
   active,
@@ -11,6 +12,7 @@ export function PageShell({
   return (
     <div className="min-h-dvh">
       <TopNav active={active} />
+      <NetworkGuard />
       <main className="mx-auto max-w-page px-6 py-6 animate-fade-in">{children}</main>
     </div>
   );

@@ -8,6 +8,7 @@ import { MarketCard } from '@/components/markets/MarketCard';
 import { FeaturedHero } from '@/components/markets/FeaturedHero';
 import { Sidebar } from '@/components/markets/Sidebar';
 import { TradePanel } from '@/components/trade/TradePanel';
+import { NetworkGuard } from '@/components/nav/NetworkGuard';
 import { useMarkets } from '@/lib/sdk/useOrders';
 import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
@@ -120,6 +121,7 @@ export default function MarketsPage() {
   return (
     <div className="min-h-dvh">
       <TopNav active="/" />
+      <NetworkGuard />
       <FilterStrip count={filtered.length} expiryGroups={expiryGroups} />
 
       <main className="mx-auto max-w-page px-6 py-6">

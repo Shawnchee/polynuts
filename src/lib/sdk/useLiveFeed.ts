@@ -26,10 +26,14 @@ import { startDeribitFeed } from './deribitFeed';
  * Disconnects when the tab is hidden and reconnects on focus.
  */
 
-// Look back ~15 minutes (450 blocks @ 2s) for activity feed seeding —
-// stays well under the SDK's 100K-block chunked cap and shows fills
-// recent enough to feel "live" without flooding the feed.
-const ACTIVITY_LOOKBACK_BLOCKS = 450;
+// Look back ~5 minutes (150 blocks @ 2s) for activity feed seeding.
+// Smaller window = fewer eth_getLogs calls = friendlier to free-tier
+// RPC plans (Alchemy free tier rate-limits log queries aggressively).
+const ACTIVITY_LOOKBACK_BLOCKS = 150;
+// Poll interval for the activity feed. Bumped from 30s → 90s so we don't
+// hammer the RPC; the user-initiated fills still prepend instantly via
+// the trade-panel's local prependActivity() call.
+const ACTIVITY_POLL_MS = 90_000;
 
 export function useLiveFeed() {
   const setPrice = useAppStore((s) => s.setPrice);
@@ -44,13 +48,20 @@ export function useLiveFeed() {
     let fillsTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
+    // Track consecutive failures so we back off if the RPC is rate-limiting
+    // (free Alchemy plans cap eth_getLogs calls per second). After 3 errors
+    // we stop retrying — the user can still see their own fills via the
+    // local prependActivity in the trade panel.
+    let consecutiveErrors = 0;
     async function pumpRecentFills() {
       if (cancelled) return;
+      if (consecutiveErrors >= 3) return;
       try {
         const client = getReadClient();
         const latest = await client.provider.getBlockNumber();
         const fromBlock = Math.max(0, latest - ACTIVITY_LOOKBACK_BLOCKS);
         const events = await client.events.getOrderFillEvents({ fromBlock });
+        consecutiveErrors = 0;
         // Newest first; cap to reasonable feed length
         const sorted = [...events]
           .sort((a, b) =>
@@ -70,8 +81,18 @@ export function useLiveFeed() {
             question: `Fill — taker ${ev.taker.slice(0, 6)}…${ev.taker.slice(-4)}`,
           });
         }
-      } catch {
-        // RPC hiccup, retry next tick
+      } catch (err) {
+        consecutiveErrors += 1;
+        // Don't surface every RPC hiccup; the SDK logger already records it.
+        // After the 3rd error we silently stop polling for this session.
+        if (consecutiveErrors === 3) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[polynuts] activity feed disabled — RPC is rate-limiting. ' +
+              'Upgrade NEXT_PUBLIC_RPC_URL to a paid plan or wait until tomorrow.',
+            err
+          );
+        }
       }
     }
 
@@ -85,9 +106,11 @@ export function useLiveFeed() {
         }, 30_000);
       }
       if (!fillsTimer) {
-        // Seed the feed immediately, then poll for new fills
+        // Seed the feed immediately, then poll for new fills.
+        // Polling frequency tuned for Alchemy free tier — see
+        // ACTIVITY_POLL_MS comment.
         pumpRecentFills();
-        fillsTimer = setInterval(pumpRecentFills, 30_000);
+        fillsTimer = setInterval(pumpRecentFills, ACTIVITY_POLL_MS);
       }
     }
 
