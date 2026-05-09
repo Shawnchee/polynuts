@@ -113,9 +113,13 @@ function HeroCard({
 }) {
   const client = getReadClient();
   const { data: binary } = useMarketBinaryFraming(market);
-  const yesProb = binary?.yesProbability ?? null;
-  const yesCents = yesProb != null ? Math.round(yesProb * 100) : null;
-  const noCents = yesCents != null ? 100 - yesCents : null;
+  // Implied probability is rendered as the "X% chance" headline; no NO
+  // side, no separate price — just a market signal derived from the
+  // SDK-simulated max payout.
+  const oddsCents =
+    binary?.yesProbability != null
+      ? Math.round(binary.yesProbability * 100)
+      : null;
   const multiplier = binary?.multiplier ?? null;
   const volume = Number(client.utils.fromUsdcDecimals(market.availableUsdc));
   const isVanilla = market.family === 'vanilla';
@@ -158,28 +162,23 @@ function HeroCard({
           <h3 className="line-clamp-2 text-md font-semibold leading-snug text-text">
             {market.question}
           </h3>
-          {!isVanilla && yesCents != null && (
+          {!isVanilla && oddsCents != null && (
             <p className={cn('num mt-0.5 text-sm font-bold', dirColor)}>
-              {yesCents}% chance
+              {oddsCents}% chance
             </p>
           )}
         </div>
       </button>
 
-      {/* Outcome row — same logic as MarketCard:
-          binary structures get YES / NO; vanilla gets one directional CTA. */}
-      {!isVanilla && yesCents != null && noCents != null ? (
-        <div className="mt-4 grid grid-cols-2 gap-2">
+      {/* Outcome row — single CTA. The user buys the option (or not);
+          there is no NO side on the order book to fill, so we don't
+          render one. Bounded structures show the SDK-derived multiplier;
+          vanilla shows the strike-based CTA (open-ended payoff). */}
+      {!isVanilla && multiplier != null ? (
+        <div className="mt-4">
           <HeroOutcome
-            label="Yes"
-            cents={yesCents}
-            variant="yes"
-            onClick={() => onSelect(market.id)}
-          />
-          <HeroOutcome
-            label="No"
-            cents={noCents}
-            variant="no"
+            label={`Bet ${market.direction} · ${multiplier.toFixed(2)}x max`}
+            direction={market.direction}
             onClick={() => onSelect(market.id)}
           />
         </div>
@@ -191,8 +190,7 @@ function HeroCard({
             } $${Number(
               client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n)
             ).toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
-            cents={null}
-            variant={market.direction === 'PUMP' ? 'yes' : 'no'}
+            direction={market.direction}
             onClick={() => onSelect(market.id)}
           />
         </div>
@@ -258,39 +256,28 @@ function HeroCard({
 
 function HeroOutcome({
   label,
-  cents,
-  variant,
+  direction,
   onClick,
 }: {
   label: string;
-  cents: number | null;
-  variant: 'yes' | 'no' | 'muted';
+  direction: MarketView['direction'];
   onClick: () => void;
 }) {
-  // Stronger fill (20% / 30%) than card cells so the buttons read as
-  // primary CTAs, not background tiles. Border in the same hue locks
-  // the boundary visually on the dark slate base.
   const cls =
-    variant === 'yes'
+    direction === 'PUMP'
       ? 'bg-pump/15 border-pump/40 text-pump dark:bg-pump/20 dark:text-pump-dark hover:bg-pump/25 dark:hover:bg-pump/30'
-      : variant === 'no'
+      : direction === 'DUMP'
       ? 'bg-dump/15 border-dump/40 text-dump dark:bg-dump/20 dark:text-dump-dark hover:bg-dump/25 dark:hover:bg-dump/30'
-      : 'bg-bg-subtle border-line text-text-muted';
+      : 'bg-range/15 border-range/40 text-range dark:bg-range/20 dark:text-range-dark hover:bg-range/25 dark:hover:bg-range/30';
   return (
     <button
       onClick={onClick}
-      // justify-center + gap-2 keeps label+cents grouped in the middle
-      // of the button instead of pushed to opposite edges (the previous
-      // justify-between made YES and 9¢ float far apart on a wide card).
       className={cn(
         'press-scale flex items-center justify-center gap-2 rounded-md border px-4 py-3 text-base font-semibold transition-colors duration-180',
         cls
       )}
     >
       <span>{label}</span>
-      {cents != null && (
-        <span className="num text-base font-bold tabular-nums">{cents}¢</span>
-      )}
     </button>
   );
 }

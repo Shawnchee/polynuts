@@ -50,9 +50,15 @@ export function MarketCard({
   const client = getReadClient();
   const volume = Number(client.utils.fromUsdcDecimals(market.availableUsdc));
   const { data: binary, isLoading: binaryLoading } = useMarketBinaryFraming(market);
-  const yesProb = binary?.yesProbability ?? null;
-  const yesCents = yesProb != null ? Math.round(yesProb * 100) : null;
-  const noCents = yesCents != null ? 100 - yesCents : null;
+  // Implied probability for the % chance corner indicator only — derived
+  // from the SDK-simulated max payout (1 / multiplier). No NO side; the
+  // user buys the option or doesn't. The probability is a market signal,
+  // not a tradable side.
+  const oddsCents =
+    binary?.yesProbability != null
+      ? Math.round(binary.yesProbability * 100)
+      : null;
+  const multiplier = binary?.multiplier ?? null;
   const isVanilla = market.family === 'vanilla';
 
   const dirColor =
@@ -101,10 +107,10 @@ export function MarketCard({
             {market.question}
           </p>
         </div>
-        {!isVanilla && yesCents != null ? (
+        {!isVanilla && oddsCents != null ? (
           <div className="flex shrink-0 flex-col items-end">
             <span className={cn('num text-md font-bold tabular-nums', dirColor)}>
-              {yesCents}%
+              {oddsCents}%
             </span>
             <span className="text-[9px] uppercase tracking-wide text-text-dim">
               chance
@@ -120,33 +126,32 @@ export function MarketCard({
         )}
       </div>
 
-      {/* Outcome row.
-          - Bounded structures (spread / butterfly / condor / ranger):
-            YES / NO binary pricing in cents (Polymarket-style).
-          - Vanilla calls/puts: ONE full-width directional CTA — vanilla
-            has unbounded payoff so there's no honest "NO" pricing.
-          - Loading: shimmer placeholders.
+      {/* Outcome row — single CTA per market.
+          The user buys the option (or doesn't); there is no NO side to
+          fill. Bounded structures show "Bet <DIR> · Nx max" using the
+          SDK-derived multiplier; vanilla shows the strike-based CTA
+          (open-ended payoff has no max multiplier to display).
        */}
-      {!isVanilla && yesCents != null && noCents != null ? (
-        <div className="mt-3 grid grid-cols-2 gap-1.5">
-          <YesNoButton label="Yes" cents={yesCents} variant="yes" />
-          <YesNoButton label="No" cents={noCents} variant="no" />
+      {!isVanilla && multiplier != null ? (
+        <div className="mt-3">
+          <OutcomeButton
+            label={`Bet ${market.direction} · ${multiplier.toFixed(2)}x max`}
+            direction={market.direction}
+          />
         </div>
       ) : isVanilla ? (
         <div className="mt-3">
-          <YesNoButton
+          <OutcomeButton
             label={`Bet ${
               market.direction === 'PUMP' ? 'above' : 'below'
             } $${Number(
               client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n)
             ).toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
-            cents={null}
-            variant={market.direction === 'PUMP' ? 'yes' : 'no'}
+            direction={market.direction}
           />
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-2 gap-1.5">
-          <OddsSkeleton loading={binaryLoading} />
+        <div className="mt-3">
           <OddsSkeleton loading={binaryLoading} />
         </div>
       )}
@@ -165,24 +170,19 @@ export function MarketCard({
   );
 }
 
-function YesNoButton({
+function OutcomeButton({
   label,
-  cents,
-  variant,
+  direction,
 }: {
   label: string;
-  cents: number | null;
-  variant: 'yes' | 'no' | 'muted';
+  direction: MarketView['direction'];
 }) {
-  // Matches the FeaturedHero HeroOutcome styling so the visual language
-  // of "this is a directional bet" is consistent everywhere — solid tinted
-  // bg, hue-matched border, darker fill on hover.
   const cls =
-    variant === 'yes'
+    direction === 'PUMP'
       ? 'bg-pump/15 border-pump/40 text-pump dark:bg-pump/20 dark:text-pump-dark hover:bg-pump/25 dark:hover:bg-pump/30'
-      : variant === 'no'
+      : direction === 'DUMP'
       ? 'bg-dump/15 border-dump/40 text-dump dark:bg-dump/20 dark:text-dump-dark hover:bg-dump/25 dark:hover:bg-dump/30'
-      : 'bg-bg-subtle border-line text-text-muted';
+      : 'bg-range/15 border-range/40 text-range dark:bg-range/20 dark:text-range-dark hover:bg-range/25 dark:hover:bg-range/30';
   return (
     <div
       className={cn(
@@ -191,9 +191,6 @@ function YesNoButton({
       )}
     >
       <span>{label}</span>
-      {cents != null && (
-        <span className="num tabular-nums">{cents}¢</span>
-      )}
     </div>
   );
 }
