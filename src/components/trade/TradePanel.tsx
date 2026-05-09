@@ -299,25 +299,23 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       const txHash = receipt?.hash;
       const url = txHash ? `${explorer}/tx/${txHash}` : explorer;
 
-      // Build the share-card args from the SDK-derived numbers we have.
-      // payoutAtFill comes from useFillPayout (client.option.simulatePayout) —
-      // it's the max payout in 6-dec USDC. Fall back to amount × multiplier
-      // when binary framing is unavailable (vanilla case).
-      const shareArgs = market
-        ? {
-            result: 'pending' as const,
-            bet: amount,
-            payout:
-              payoutAtFill != null
-                ? Number(readClient.utils.fromUsdcDecimals(payoutAtFill))
-                : binary?.multiplier
-                ? Math.round(amount * binary.multiplier)
-                : amount,
-            direction: market.direction,
-            question: market.question,
-            asset: market.asset,
-          }
-        : null;
+      // Build the share-card args from SDK-derived numbers only.
+      // payoutAtFill comes from useFillPayout (client.option.simulatePayout)
+      // — the max payout in 6-dec USDC for the actual numContracts being
+      // bought. If it isn't loaded yet, or this is a vanilla option (open-
+      // ended payoff has no max), we don't show a brag prompt rather than
+      // recompute payout client-side.
+      const shareArgs =
+        market && payoutAtFill != null
+          ? {
+              result: 'pending' as const,
+              bet: amount,
+              payout: Number(readClient.utils.fromUsdcDecimals(payoutAtFill)),
+              direction: market.direction,
+              question: market.question,
+              asset: market.asset,
+            }
+          : null;
 
       toast.success(
         <div className="flex flex-col gap-2">
