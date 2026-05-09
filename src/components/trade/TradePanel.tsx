@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 import { toast } from 'sonner';
+import { ethers } from 'ethers';
 import {
   isThetanutsError,
   OrderExpiredError,
@@ -65,7 +66,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
     return Number.isFinite(n) && n > 0 ? n : 0;
   }, [amountInput]);
   const { isConnected } = useAccount();
-  const { signerClient, ready, notReadyReason } = useSignerClient();
+  const { signerClient, signer, ready, notReadyReason } = useSignerClient();
   const { data: balance } = useUsdcBalance();
   const prependActivity = useAppStore((s) => s.prependActivity);
   const queryClient = useQueryClient();
@@ -146,7 +147,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
   }, [allowance, amount]);
 
   async function handleApprove() {
-    if (!ready || !signerClient || !orderOptionBook) {
+    if (!ready || !signerClient || !signer || !orderOptionBook) {
       if (notReadyReason === 'wrong-chain') {
         toast.error('Switch your wallet to Base mainnet first');
       } else {
@@ -164,13 +165,31 @@ export function TradePanel({ market }: { market: MarketView | null }) {
     });
     try {
       const usdcAddr = signerClient.chainConfig.tokens.USDC.address;
-      // Approve max — single approval covers all future bets up to 2^256-1
-      // USDC. Standard DeFi pattern; users can always revoke later.
-      const receipt = await signerClient.erc20.approve(
-        usdcAddr,
+      // Approve max — single approval covers all future bets. Standard DeFi
+      // pattern; users can revoke at revoke.cash if they ever want to.
+      //
+      // We bypass the SDK's `signerClient.erc20.approve(...)` (which doesn't
+      // expose tx overrides) and build the call directly through ethers so
+      // we can pin `gasLimit`. ERC20 approve is deterministic ~46k gas.
+      // Hardcoding 80k means the wallet does NOT need to call
+      // `eth_estimateGas` against its own RPC before opening the popup —
+      // which is the main reason the approve popup spins forever for users
+      // whose wallet is configured with a slow / rate-limited public Base
+      // RPC. The wallet sees a fully-formed tx and can render Confirm/Reject
+      // immediately.
+      const erc20 = new ethers.Interface([
+        'function approve(address spender, uint256 value)',
+      ]);
+      const data = erc20.encodeFunctionData('approve', [
         orderOptionBook,
-        MAX_UINT256
-      );
+        MAX_UINT256,
+      ]);
+      const tx = await signer.sendTransaction({
+        to: usdcAddr,
+        data,
+        gasLimit: 80_000n,
+      });
+      const receipt = await tx.wait();
       // eslint-disable-next-line no-console
       console.info('[polynuts] approve mined', { txHash: receipt?.hash });
       // Bust the allowance cache so the bet button activates immediately.
