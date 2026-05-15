@@ -1,6 +1,24 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Baseline security headers for a real-money app. frame-ancestors 'none'
+  // blocks clickjacking of the bet button; nosniff prevents MIME confusion
+  // attacks on the OG/win-card route; Referrer-Policy avoids leaking the
+  // user's market URL (which can contain a wallet hint in V2) to outbound
+  // share-card unfurlers.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+        ],
+      },
+    ];
+  },
   webpack: (config, { isServer }) => {
     config.externals.push('pino-pretty', 'lokijs', 'encoding');
     // The MetaMask SDK pulls in @react-native-async-storage/async-storage as
