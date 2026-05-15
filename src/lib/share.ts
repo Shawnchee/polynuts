@@ -40,6 +40,11 @@ export function buildWinCardUrl(args: ShareCardArgs): string {
  *   - pending: forward-looking ("If I'm right…")
  *   - win:     celebratory
  *   - loss:    rare, but shipped for completeness
+ *
+ * CRITICAL: `payout` and `bet` MUST originate from SDK-derived values
+ * (useFillPayout / useMarketBinaryFraming) — never recompute them from
+ * display strings on the trade panel. The multiplier below is a thin
+ * `payout / bet` ratio that only works when the inputs are SDK-truth.
  */
 function shareCopy(args: ShareCardArgs): string {
   const dir = args.direction.toLowerCase();
