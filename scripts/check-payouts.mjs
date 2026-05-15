@@ -31,12 +31,25 @@ function familyOf(name) {
   return 'vanilla';
 }
 
-function probePrices(family, strikesAsc) {
+// Strikes must be in CONTRACT order, not ascending. PUT/PUT_SPREAD/PUT_FLY
+// require descending; everything else ascending. simulatePayout returns 0
+// silently if the order is wrong, which makes this script falsely pass.
+function strikesInContractOrder(implName, raw) {
+  const isPutNonCondor =
+    implName === 'PUT' || implName === 'PUT_SPREAD' || implName === 'PUT_FLY';
+  return [...raw].sort((a, b) =>
+    isPutNonCondor ? (a > b ? -1 : a < b ? 1 : 0) : (a < b ? -1 : a > b ? 1 : 0)
+  );
+}
+
+function probePrices(family, strikesContract) {
   if (family === 'vanilla') return null;
-  if (family === 'spread') return [strikesAsc[strikesAsc.length - 1]];
-  if (family === 'butterfly') return [strikesAsc[1]];
+  // Index [1] is the ITM strike for spreads in contract order
+  // (CALL_SPREAD asc → high; PUT_SPREAD desc → low).
+  if (family === 'spread') return [strikesContract[1]];
+  if (family === 'butterfly') return [strikesContract[1]];
   if (family === 'condor' || family === 'iron_condor' || family === 'ranger') {
-    return [strikesAsc[1], strikesAsc[2]];
+    return [strikesContract[1], strikesContract[2]];
   }
   return null;
 }
@@ -59,17 +72,20 @@ const PROBE_UNIT = 1_000_000n; // 1 USDC of contracts
 
 for (const family of Object.keys(byFamily)) {
   const sample = byFamily[family][0];
-  const strikes = sample.rawApiData.strikes.map(BigInt).sort((a,b) => a < b ? -1 : a > b ? 1 : 0);
-  const probes = probePrices(family, strikes);
+  const info = c.chainConfig.optionImplementations[sample.rawApiData.implementation.toLowerCase()];
+  const raw = sample.rawApiData.strikes.map(BigInt);
+  const strikesContract = strikesInContractOrder(info.name, raw);
+  const strikesAsc = [...raw].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const probes = probePrices(family, strikesContract);
   const impl = sample.rawApiData.implementation;
 
   console.log(`\n=== ${family.toUpperCase()} (impl ${impl.slice(0, 8)}…) ===`);
-  console.log(`Strikes: ${strikes.map(s => '$' + (Number(s)/1e8).toLocaleString()).join(' / ')}`);
+  console.log(`Strikes (display): ${strikesAsc.map(s => '$' + (Number(s)/1e8).toLocaleString()).join(' / ')}`);
   console.log(`Premium: $${(Number(sample.order.price)/1e8).toFixed(2)} per contract (8-dec)`);
   console.log(`Probes: ${probes.map(p => '$' + (Number(p)/1e8).toLocaleString()).join(', ')}`);
 
   const results = await Promise.all(
-    probes.map(p => c.option.simulatePayout(impl, p, strikes, PROBE_UNIT))
+    probes.map(p => c.option.simulatePayout(impl, p, strikesContract, PROBE_UNIT))
   );
   for (let i = 0; i < probes.length; i++) {
     console.log(`  simulatePayout @ $${(Number(probes[i])/1e8).toLocaleString()}: ${results[i].toString()} (8-dec) = $${(Number(results[i])/1e8).toFixed(2)}`);

@@ -228,11 +228,13 @@ if (!linOrder) {
   console.log('No multi-strike sample available for linearity test');
 } else {
   const { o, info } = linOrder;
-  const strikesAsc = o.rawApiData.strikes
-    .map(BigInt)
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const raw = o.rawApiData.strikes.map(BigInt);
+  // Contract order — PUT family needs descending or simulatePayout returns 0
+  // and the linearity test silently false-passes (0 → 0 → 0 is "linear").
+  const strikesContract = strikesInContractOrder(info.name, raw);
+  const strikesAsc = [...raw].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const family = familyOf(info.name);
-  const probes = probePrices(family, strikesAsc);
+  const probes = probePrices(family, strikesContract);
   const impl = o.rawApiData.implementation;
 
   console.log(`Sample: ${info.name} ${strikesAsc.map((s) => '$' + Number(s) / 1e8).join('/')}`);
@@ -254,7 +256,7 @@ if (!linOrder) {
     }
     const sims = await Promise.all(
       probes.map((p) =>
-        c.option.simulatePayout(impl, p, strikesAsc, preview.numContracts)
+        c.option.simulatePayout(impl, p, strikesContract, preview.numContracts)
       )
     );
     const payout = sims.reduce((a, x) => (x > a ? x : a), 0n);
