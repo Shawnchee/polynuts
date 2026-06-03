@@ -18,15 +18,55 @@ const jetbrains = JetBrains_Mono({
   display: 'swap',
 });
 
+const SITE_DESCRIPTION =
+  'A prediction market for crypto options. Bet PUMP or DUMP on ETH and BTC with USDC. Powered by Thetanuts Finance V4 on Base.';
+
+// Reuse the live share-card renderer for the default unfurl image. `pending`
+// shows the direction-tinted "BETTING" treatment, which reads well as a
+// generic marketing card for a link to the markets page.
+const OG_IMAGE = '/api/win-card?result=pending';
+
 export const metadata: Metadata = {
-  title: 'Polynuts — Bet on crypto, on-chain',
-  description:
-    'A prediction market for crypto options. Bet PUMP or DUMP on ETH and BTC with USDC. Powered by Thetanuts Finance V4 on Base.',
+  title: {
+    default: 'Polynuts — Bet on crypto, on-chain',
+    template: '%s · Polynuts',
+  },
+  description: SITE_DESCRIPTION,
   metadataBase: new URL('https://polynuts.xyz'),
+  applicationName: 'Polynuts',
+  keywords: [
+    'prediction market',
+    'crypto options',
+    'ETH',
+    'BTC',
+    'USDC',
+    'Base',
+    'Thetanuts',
+    'on-chain betting',
+  ],
+  icons: {
+    icon: '/icon.svg',
+  },
   openGraph: {
-    title: 'Polynuts',
+    title: 'Polynuts — Bet on crypto, on-chain',
     description: 'Bet PUMP or DUMP on crypto. Real options under the hood.',
     type: 'website',
+    siteName: 'Polynuts',
+    url: 'https://polynuts.xyz',
+    images: [
+      {
+        url: OG_IMAGE,
+        width: 1200,
+        height: 630,
+        alt: 'Polynuts — bet PUMP or DUMP on crypto with USDC',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Polynuts — Bet on crypto, on-chain',
+    description: 'Bet PUMP or DUMP on crypto. Real options under the hood.',
+    images: [OG_IMAGE],
   },
 };
 
