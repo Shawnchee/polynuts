@@ -48,6 +48,9 @@ export function Providers({ children }: { children: ReactNode }) {
 }
 
 function ThemedRainbowKit({ children }: { children: ReactNode }) {
+  // useTheme reports the SSR-default theme until mounted, so RainbowKit's
+  // theme-dependent injected styles match the server HTML on first render
+  // (no hydration mismatch); it then switches to the real theme post-mount.
   const { theme } = useTheme();
   const rk =
     theme === 'dark'

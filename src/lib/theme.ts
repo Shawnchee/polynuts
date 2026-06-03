@@ -34,6 +34,18 @@ export function applyTheme(theme: Theme) {
 
 export function useTheme(): { theme: Theme; setTheme: (t: Theme) => void; toggle: () => void } {
   const [theme, setThemeState] = useState<Theme>(() => readStored() ?? systemPref());
+  // The server renders with the SSR default ('dark') since it can't read the
+  // stored/system theme; the real value is only known after mount. Reporting
+  // the real theme on the first CLIENT render would mismatch the server HTML
+  // for any theme-conditional markup (the toggle icon, RainbowKit's injected
+  // styles) and force React to re-render that subtree — a visible flash. So
+  // report 'dark' until mounted, then the real theme. The pre-hydration boot
+  // script already set <html data-theme>, so the *visual* theme is correct
+  // from first paint via CSS; this gate only affects JS-conditional rendering.
+  // `theme` (internal state) stays real so applyTheme + persistence operate on
+  // the user's actual choice — only the returned value is gated.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     applyTheme(theme);
@@ -53,7 +65,7 @@ export function useTheme(): { theme: Theme; setTheme: (t: Theme) => void; toggle
   }, []);
 
   return {
-    theme,
+    theme: mounted ? theme : 'dark',
     setTheme: setThemeState,
     toggle: () => setThemeState((t) => (t === 'dark' ? 'light' : 'dark')),
   };
