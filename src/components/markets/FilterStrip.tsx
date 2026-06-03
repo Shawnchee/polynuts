@@ -50,7 +50,7 @@ export function FilterStrip({
 
   return (
     <div className="border-b border-line bg-bg-elev/60 backdrop-blur">
-      <div className="mx-auto flex max-w-page flex-col gap-2 px-6 py-3">
+      <div className="mx-auto flex max-w-page flex-col gap-2 px-4 py-3 sm:px-6">
         {/* Top row: direction + sort */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -59,7 +59,7 @@ export function FilterStrip({
                 key={t.id}
                 onClick={() => setFilter(t.id)}
                 className={cn(
-                  'press-scale rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-180',
+                  'press-scale inline-flex min-h-[44px] items-center rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-180 sm:min-h-0',
                   filter === t.id
                     ? tabAccent[t.id]
                     : 'text-text-muted hover:bg-surface-hover hover:text-text'
@@ -76,7 +76,7 @@ export function FilterStrip({
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-text hover:bg-surface-hover focus:outline-none transition-colors duration-120"
+              className="min-h-[44px] rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-text hover:bg-surface-hover focus:outline-none transition-colors duration-120 sm:min-h-0"
             >
               {sorts.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -134,7 +134,7 @@ function ChipButton({
       onClick={onClick}
       title={title}
       className={cn(
-        'press-scale shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-120',
+        'press-scale inline-flex min-h-[40px] shrink-0 items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-120 sm:min-h-0',
         active
           ? 'border-text bg-text text-bg-elev'
           : 'border-line text-text-muted hover:border-text-dim hover:text-text'

@@ -157,7 +157,7 @@ export default function ActivityPage() {
                 aria-selected={filter === f.id}
                 onClick={() => setFilter(f.id)}
                 className={cn(
-                  'press-scale rounded-sm px-3 py-1.5 text-sm font-medium transition-all duration-180',
+                  'press-scale inline-flex min-h-[40px] items-center rounded-sm px-3 py-1.5 text-sm font-medium transition-all duration-180 sm:min-h-0',
                   filter === f.id
                     ? 'bg-text text-bg-elev'
                     : 'text-text-muted hover:text-text'

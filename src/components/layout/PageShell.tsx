@@ -13,7 +13,7 @@ export function PageShell({
     <div className="min-h-dvh scroll-pt-20">
       <TopNav active={active} />
       <NetworkGuard />
-      <main className="mx-auto w-full max-w-page px-6 py-6 animate-fade-in">
+      <main className="mx-auto w-full max-w-page px-4 py-6 animate-fade-in sm:px-6">
         {children}
       </main>
     </div>

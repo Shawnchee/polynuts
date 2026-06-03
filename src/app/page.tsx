@@ -124,7 +124,7 @@ export default function MarketsPage() {
       <NetworkGuard />
       <FilterStrip count={filtered.length} expiryGroups={expiryGroups} />
 
-      <main className="mx-auto max-w-page px-6 py-6">
+      <main className="mx-auto max-w-page px-4 py-6 sm:px-6">
         <div className="flex flex-col gap-6 lg:flex-row">
           <section className="min-w-0 flex-1 space-y-6">
             {isLoading && <SkeletonGrid />}

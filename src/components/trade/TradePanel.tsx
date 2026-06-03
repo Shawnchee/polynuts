@@ -501,7 +501,7 @@ export function TradePanel({
               key={s}
               onClick={() => setAmountInput(String(s))}
               className={cn(
-                'press-scale rounded-md border px-1 py-2 text-sm font-medium tabular-nums num transition-colors duration-120',
+                'press-scale min-h-[44px] rounded-md border px-1 py-2 text-sm font-medium tabular-nums num transition-colors duration-120 sm:min-h-0',
                 amount === s
                   ? 'border-text bg-text text-bg-elev'
                   : 'border-line text-text hover:border-text-dim hover:bg-surface-hover'
@@ -528,7 +528,7 @@ export function TradePanel({
               if (dotCount > 1) return;
               setAmountInput(cleaned);
             }}
-            className="w-full rounded-md border border-line bg-surface px-2 py-1.5 num text-sm tabular-nums text-text focus:border-brand"
+            className="min-h-[44px] w-full rounded-md border border-line bg-surface px-2 py-1.5 num text-sm tabular-nums text-text focus:border-brand sm:min-h-0"
           />
         </div>
         {amountInput !== '' && amount > 0 && amount < MIN_BET && (

@@ -47,7 +47,7 @@ export function NetworkGuard() {
         'bg-dump text-white shadow-md'
       )}
     >
-      <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-3 px-6 py-3 text-sm">
+      <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm sm:px-6">
         <div className="flex items-center gap-2">
           <AlertTriangle
             className="h-5 w-5 shrink-0 rounded-full bg-white/20 p-0.5"
@@ -115,7 +115,7 @@ export function ChainStatusChip() {
       onClick={() => switchChain({ chainId: POLYNUTS_CHAIN_ID })}
       title={`On ${name} — click to switch to Base`}
       aria-label={`Wrong network: on ${name}. Switch to Base.`}
-      className="press-scale inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-dump/50 bg-dump/15 px-2.5 py-1 text-xs font-semibold text-dump dark:text-dump-dark transition-colors hover:bg-dump/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dump/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+      className="press-scale inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-full border border-dump/50 bg-dump/15 px-2.5 py-1 text-xs font-semibold text-dump dark:text-dump-dark transition-colors hover:bg-dump/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dump/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:min-h-0"
     >
       <AlertTriangle className="h-3 w-3" aria-hidden />
       {name} → Base
