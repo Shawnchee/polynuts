@@ -87,14 +87,17 @@ for (const family of Object.keys(byFamily)) {
   const results = await Promise.all(
     probes.map(p => c.option.simulatePayout(impl, p, strikesContract, PROBE_UNIT))
   );
+  // simulatePayout returns 6-dec USDC (mirrors usePayout.ts / verify-sdk.mjs);
+  // order.price is 8-dec, so convert to 6-dec (÷100) before comparing.
   for (let i = 0; i < probes.length; i++) {
-    console.log(`  simulatePayout @ $${(Number(probes[i])/1e8).toLocaleString()}: ${results[i].toString()} (8-dec) = $${(Number(results[i])/1e8).toFixed(2)}`);
+    console.log(`  simulatePayout @ $${(Number(probes[i])/1e8).toLocaleString()}: ${results[i].toString()} (6-dec) = $${(Number(results[i])/1e6).toFixed(2)}`);
   }
   const max = results.reduce((acc, x) => x > acc ? x : acc, 0n);
-  console.log(`Max payout per 1 USDC of contracts: $${(Number(max)/1e8).toFixed(2)}`);
+  console.log(`Max payout per 1 USDC of contracts: $${(Number(max)/1e6).toFixed(2)}`);
 
   if (sample.order.price > 0n && max > 0n) {
-    const multiplier = Number(max) / Number(sample.order.price);
+    const cost6dec = sample.order.price / 100n;
+    const multiplier = Number(max) / Number(cost6dec);
     console.log(`Multiplier: ${multiplier.toFixed(2)}x  (implied ${(100/multiplier).toFixed(1)}% probability)`);
   }
 }
