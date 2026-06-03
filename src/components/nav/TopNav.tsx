@@ -40,7 +40,7 @@ export function TopNav({ active = '/' }: { active?: string }) {
                   href={t.href}
                   aria-current={isActive ? 'page' : undefined}
                   className={cn(
-                    'relative flex min-h-[44px] cursor-pointer items-center rounded-md px-3 text-base transition-colors duration-180',
+                    'relative flex cursor-pointer items-center rounded-md px-3 py-2 text-base transition-colors duration-180',
                     isActive
                       ? 'font-semibold text-text bg-surface'
                       : 'font-medium text-text-muted hover:text-text hover:bg-surface-hover'
