@@ -22,17 +22,20 @@ export function TimerBadge({ expirySec }: { expirySec: number }) {
     const id = setInterval(() => setTick((t) => t + 1), 60_000);
     return () => clearInterval(id);
   }, []);
-  const urgent = isUrgent(expirySec);
+  const valid = Number.isFinite(expirySec);
+  const urgent = valid && isUrgent(expirySec);
+  const label = valid ? fmtAbsoluteExpiry(expirySec) : '—';
   return (
     <span
       className={cn(
-        'num inline-flex items-center gap-1 text-xs tabular-nums',
+        'num inline-flex items-center gap-1 text-xs tabular-nums leading-none',
         urgent ? 'text-dump font-semibold' : 'text-text-muted'
       )}
-      title={new Date(expirySec * 1000).toUTCString()}
+      title={valid ? new Date(expirySec * 1000).toUTCString() : undefined}
+      aria-label={valid ? `Settles ${label}${urgent ? ' (closing soon)' : ''}` : 'Settlement time unavailable'}
     >
-      <Clock className="h-2.5 w-2.5" aria-hidden />
-      {fmtAbsoluteExpiry(expirySec)}
+      <Clock className="h-2.5 w-2.5 shrink-0" aria-hidden />
+      {label}
     </span>
   );
 }

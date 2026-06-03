@@ -37,8 +37,15 @@ export function FilterStrip({
   count: number;
   expiryGroups: ExpiryGroup[];
 }) {
-  const { filter, sort, expiryFilter, setFilter, setSort, setExpiryFilter } =
-    useAppStore();
+  // Narrow selectors only. Subscribing via `useAppStore()` (no selector)
+  // re-renders this strip on every Deribit price tick, because `setPrice`
+  // replaces the `prices` object reference each tick.
+  const filter = useAppStore((s) => s.filter);
+  const sort = useAppStore((s) => s.sort);
+  const expiryFilter = useAppStore((s) => s.expiryFilter);
+  const setFilter = useAppStore((s) => s.setFilter);
+  const setSort = useAppStore((s) => s.setSort);
+  const setExpiryFilter = useAppStore((s) => s.setExpiryFilter);
   const totalAcrossGroups = expiryGroups.reduce((sum, g) => sum + g.count, 0);
 
   return (

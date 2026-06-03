@@ -12,6 +12,8 @@ export function shortAddress(addr: string, head = 6, tail = 4) {
 }
 
 export function fmtUsd(amount: number, opts: { compact?: boolean } = {}) {
+  // Guard non-finite input centrally so no caller can ever render "$NaN".
+  if (!Number.isFinite(amount)) return '$0.00';
   if (opts.compact && Math.abs(amount) >= 1000) {
     if (Math.abs(amount) >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
     return `$${(amount / 1000).toFixed(1)}K`;
@@ -24,10 +26,12 @@ export function fmtUsd(amount: number, opts: { compact?: boolean } = {}) {
 }
 
 export function fmtPct(pct: number, digits = 0) {
+  if (!Number.isFinite(pct)) return '—';
   return `${pct.toFixed(digits)}%`;
 }
 
 export function fmtTimeLeft(expirySec: number) {
+  if (!Number.isFinite(expirySec)) return '—';
   const now = Math.floor(Date.now() / 1000);
   const left = expirySec - now;
   if (left <= 0) return 'expired';

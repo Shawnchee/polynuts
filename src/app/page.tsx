@@ -156,8 +156,8 @@ export default function MarketsPage() {
                 {featured.length > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="label text-text-muted">All markets</span>
-                    <span className="num text-xs text-text-dim">
-                      {rest.length} total
+                    <span className="num text-xs tabular-nums text-text-dim">
+                      {rest.length.toLocaleString('en-US')} total
                     </span>
                   </div>
                 )}
@@ -191,7 +191,7 @@ export default function MarketsPage() {
 
           <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[320px]">
             <div className="lg:sticky lg:top-20">
-              <TradePanel market={selectedMarket} />
+              <TradePanel market={selectedMarket} isLoading={isLoading} />
             </div>
             <div className="hidden lg:block">
               <Sidebar />
@@ -249,16 +249,34 @@ function Pager({
 }
 
 function SkeletonGrid() {
+  // animate-pulse (no custom keyframes) per the polish spec; fixed h-44
+  // reserves the real card height so there's no layout shift when markets
+  // resolve. The inner blocks mirror MarketCard's structure (glyph +
+  // question, CTA bar, meta strip) so the transition reads as the card
+  // filling in rather than a generic box swap.
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, i) => (
+    <div
+      aria-busy="true"
+      aria-label="Loading markets"
+      className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+    >
+      {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
-          className={cn(
-            'relative h-44 overflow-hidden rounded-xl border border-line bg-bg-elev'
-          )}
+          className="flex h-44 animate-pulse flex-col rounded-xl border border-line bg-bg-elev p-3"
         >
-          <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-surface-hover to-transparent" />
+          <div className="flex items-start gap-2">
+            <div className="h-6 w-6 shrink-0 rounded-md bg-bg-subtle" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="h-3 w-full rounded bg-bg-subtle" />
+              <div className="h-3 w-2/3 rounded bg-bg-subtle" />
+            </div>
+          </div>
+          <div className="mt-3 h-9 rounded-md bg-bg-subtle" />
+          <div className="mt-auto flex items-center justify-between pt-3">
+            <div className="h-3 w-16 rounded bg-bg-subtle" />
+            <div className="h-3 w-14 rounded bg-bg-subtle" />
+          </div>
         </div>
       ))}
     </div>
@@ -276,10 +294,11 @@ function ExpiryEmptyState({
 }) {
   if (!hasMarkets) {
     return (
-      <div className="flex h-64 animate-fade-in flex-col items-center justify-center rounded-xl border border-dashed border-line bg-bg-elev">
+      <div className="flex h-64 animate-fade-in flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line bg-bg-elev px-6 text-center">
         <p className="text-md font-medium text-text">No live markets right now</p>
-        <p className="mt-1 text-sm text-text-muted">
-          New markets show up as makers post orders. Refreshes every 30 seconds.
+        <p className="text-sm text-text-muted">
+          New markets show up as makers post orders. This list refreshes every
+          30 seconds.
         </p>
       </div>
     );
@@ -287,17 +306,17 @@ function ExpiryEmptyState({
 
   // Has markets but the user's direction × expiry combo is empty.
   return (
-    <div className="flex h-64 animate-fade-in flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line bg-bg-elev px-6 text-center">
+    <div className="flex h-64 animate-fade-in flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line bg-bg-elev px-6 text-center">
       <p className="text-md font-medium text-text">
-        No markets match your filters
+        No markets match this filter
       </p>
       <p className="text-sm text-text-muted">
-        Try a different direction or expiry.
+        Try a different direction or expiry to see more markets.
       </p>
       {expiryFilter !== 'all' && (
         <button
           onClick={onResetExpiry}
-          className="press-scale mt-2 inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark transition-colors"
+          className="press-scale mt-2 inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
         >
           Show all expiries
         </button>
@@ -312,7 +331,7 @@ function ErrorState({ msg, onRetry }: { msg: string; onRetry: () => void }) {
       <p className="text-md font-medium text-dump dark:text-dump-dark">{msg}</p>
       <button
         onClick={onRetry}
-        className="press-scale rounded-md bg-dump px-4 py-2 text-sm font-semibold text-white hover:bg-dump/90 transition-colors"
+        className="press-scale rounded-md bg-dump px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-dump/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dump/50"
       >
         Retry
       </button>

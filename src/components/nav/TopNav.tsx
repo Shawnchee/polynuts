@@ -25,20 +25,22 @@ export function TopNav({ active = '/' }: { active?: string }) {
         <div className="flex items-center gap-8">
           <Link
             href="/"
-            className="select-none text-md font-bold tracking-tight transition-opacity hover:opacity-90"
+            aria-label="Polynuts home"
+            className="flex cursor-pointer select-none items-center text-md font-bold tracking-tight transition-opacity hover:opacity-90"
           >
             <span className="text-brand">poly</span>
             <span className="text-text">nuts</span>
           </Link>
-          <nav className="flex items-center gap-1">
+          <nav aria-label="Primary" className="flex items-center gap-1">
             {tabs.map((t) => {
               const isActive = active === t.href;
               return (
                 <Link
                   key={t.href}
                   href={t.href}
+                  aria-current={isActive ? 'page' : undefined}
                   className={cn(
-                    'relative rounded-md px-3 py-1.5 text-base transition-colors duration-180',
+                    'relative flex min-h-[44px] cursor-pointer items-center rounded-md px-3 text-base transition-colors duration-180',
                     isActive
                       ? 'font-semibold text-text bg-surface'
                       : 'font-medium text-text-muted hover:text-text hover:bg-surface-hover'
@@ -48,7 +50,7 @@ export function TopNav({ active = '/' }: { active?: string }) {
                   {isActive && (
                     <span
                       aria-hidden
-                      className="absolute inset-x-3 -bottom-px h-[2px] rounded-full bg-brand"
+                      className="absolute inset-x-3 bottom-1 h-[2px] rounded-full bg-brand"
                     />
                   )}
                 </Link>

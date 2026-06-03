@@ -35,7 +35,7 @@ export function DirectionTag({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-md border font-bold uppercase',
+        'inline-flex items-center gap-1 rounded-md border font-bold uppercase tabular-nums leading-none tracking-wide',
         size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm',
         c.cls
       )}

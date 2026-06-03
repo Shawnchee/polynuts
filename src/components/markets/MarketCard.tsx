@@ -12,6 +12,26 @@ const directionGlow: Record<MarketView['direction'], string> = {
   RANGE: 'glow-range',
 };
 
+// Safe money — guards NaN/Infinity from SDK decimal parsing so a brand-new
+// market with an empty/odd availableUsdc never renders "$NaN". fmtUsd itself
+// lives in lib/utils (not owned here); see report note.
+function safeUsd(n: number, opts?: { compact?: boolean }): string {
+  return Number.isFinite(n) ? fmtUsd(n, opts) : '$0.00';
+}
+
+// Safe multiplier — guards NaN/Infinity so we never render "NaNx"/"Infinityx".
+function safeMult(n: number | null | undefined, digits = 2): string | null {
+  return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(digits) : null;
+}
+
+// Safe strike — used for the vanilla "above/below $X" CTA. Falls back to '—'
+// rather than "$NaN" when the strike is missing/unparseable.
+function safeStrike(n: number): string {
+  return Number.isFinite(n)
+    ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+    : '—';
+}
+
 const assetEmoji: Record<string, string> = {
   ETH: '◆',
   BTC: '₿',
@@ -55,7 +75,8 @@ export function MarketCard({
   // user buys the option or doesn't. The probability is a market signal,
   // not a tradable side.
   const oddsCents =
-    binary?.yesProbability != null
+    binary?.yesProbability != null &&
+    Number.isFinite(binary.yesProbability)
       ? Math.round(binary.yesProbability * 100)
       : null;
   const multiplier = binary?.multiplier ?? null;
@@ -117,8 +138,8 @@ export function MarketCard({
             </span>
           </div>
         ) : (
-          <span className="num text-xs text-text-dim">
-            {fmtUsd(
+          <span className="num text-xs tabular-nums text-text-dim">
+            {safeUsd(
               Number(client.utils.fromPriceDecimals(market.pricePerContract)),
               { compact: true }
             )}
@@ -132,10 +153,10 @@ export function MarketCard({
           SDK-derived multiplier; vanilla shows the strike-based CTA
           (open-ended payoff has no max multiplier to display).
        */}
-      {!isVanilla && multiplier != null ? (
+      {!isVanilla && safeMult(multiplier) != null ? (
         <div className="mt-3">
           <OutcomeButton
-            label={`Bet ${market.direction} · ${multiplier.toFixed(2)}x max`}
+            label={`Bet ${market.direction} · ${safeMult(multiplier)}x max`}
             direction={market.direction}
           />
         </div>
@@ -144,9 +165,9 @@ export function MarketCard({
           <OutcomeButton
             label={`Bet ${
               market.direction === 'PUMP' ? 'above' : 'below'
-            } $${Number(
-              client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n)
-            ).toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
+            } ${safeStrike(
+              Number(client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n))
+            )}`}
             direction={market.direction}
           />
         </div>
@@ -158,9 +179,9 @@ export function MarketCard({
 
       {/* Meta strip — volume + expiry */}
       <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-xs text-text-muted">
-        <span className="num">
+        <span className="num tabular-nums">
           <span className="num font-semibold text-text">
-            {fmtUsd(volume, { compact: true })}
+            {safeUsd(volume, { compact: true })}
           </span>{' '}
           vol
         </span>
@@ -196,11 +217,15 @@ function OutcomeButton({
 }
 
 function OddsSkeleton({ loading }: { loading: boolean }) {
+  // Reserves the CTA-bar height so the card doesn't shift when the SDK
+  // payout sim resolves. animate-pulse (no custom keyframes) per spec.
   return (
-    <div className="relative flex h-7 items-center justify-between overflow-hidden rounded-md bg-bg-subtle px-2.5">
-      {loading && (
-        <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-surface-hover to-transparent" />
+    <div
+      aria-hidden
+      className={cn(
+        'h-7 rounded-md bg-bg-subtle',
+        loading && 'animate-pulse'
       )}
-    </div>
+    />
   );
 }

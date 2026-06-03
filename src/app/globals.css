@@ -119,14 +119,20 @@ button {
 
 input:focus-visible,
 button:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
 
 [data-theme='dark'] input:focus-visible,
 [data-theme='dark'] button:focus-visible,
-[data-theme='dark'] select:focus-visible {
+[data-theme='dark'] select:focus-visible,
+[data-theme='dark'] textarea:focus-visible,
+[data-theme='dark'] a:focus-visible,
+[data-theme='dark'] [tabindex]:focus-visible {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
 }
 
@@ -146,6 +152,21 @@ select:focus-visible {
   .num {
     font-family: var(--font-jetbrains), ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
+  }
+  /* Tabular numerals without forcing the mono face — for inline figures that
+     should stay non-jittery in the sans stack (P/L, counts, %). Additive. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Shared visible focus ring for custom interactive surfaces. Additive
+     helper so non-form elements (divs/spans acting as buttons) can opt in
+     to the same brand ring used by inputs/buttons. */
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+  }
+  [data-theme='dark'] .focus-ring:focus-visible {
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
   }
   .label {
     font-size: 10px;
