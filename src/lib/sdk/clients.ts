@@ -9,17 +9,29 @@ const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? 'https://base-mainnet.public.
 const REFERRER = process.env.NEXT_PUBLIC_REFERRER_ADDRESS;
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
-if (
-  typeof window !== 'undefined' &&
-  (!REFERRER || REFERRER.toLowerCase() === ZERO_ADDR)
-) {
-  // Real-money build deployed without a referrer wallet — fees route to the
-  // zero address and are burned. Loud once at module init so we don't miss
-  // it during a production smoke test. Browser-only so SSR isn't noisy.
-  // eslint-disable-next-line no-console
-  console.warn(
-    '[polynuts] NEXT_PUBLIC_REFERRER_ADDRESS not set (or zero) — all referrer fees will be burned. Set this to your Gnosis Safe / multisig before launch.'
-  );
+const REFERRER_MISSING = !REFERRER || REFERRER.toLowerCase() === ZERO_ADDR;
+
+if (REFERRER_MISSING) {
+  if (process.env.NODE_ENV === 'production') {
+    // Real-money production build with no referrer wallet — every fill would
+    // route referrer fees to the zero address and burn them. Fail the build
+    // loudly (this runs at `next build` time) instead of shipping a deploy
+    // that silently leaks fees forever.
+    throw new Error(
+      '[polynuts] NEXT_PUBLIC_REFERRER_ADDRESS is missing or set to the zero address in a production build. ' +
+        'Referrer fees would be burned. Set it to your fee-earning address (e.g. a Gnosis Safe / multisig) ' +
+        'in your deploy platform env (e.g. Vercel) and rebuild.'
+    );
+  }
+
+  if (typeof window !== 'undefined') {
+    // Non-production: dev must still run with no referrer. Warn once at module
+    // init so it's visible during a smoke test. Browser-only so SSR isn't noisy.
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[polynuts] NEXT_PUBLIC_REFERRER_ADDRESS not set (or zero) — all referrer fees will be burned. Set this to your Gnosis Safe / multisig before launch.'
+    );
+  }
 }
 
 let _readClient: ThetanutsClient | null = null;
