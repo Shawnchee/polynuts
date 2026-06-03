@@ -2,6 +2,7 @@
 
 import type { MarketView } from '@/lib/sdk/markets';
 import { TimerBadge } from '@/components/ui/TimerBadge';
+import { TokenIcon } from '@/components/ui/TokenIcon';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
@@ -31,16 +32,6 @@ function safeStrike(n: number): string {
     ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
     : '—';
 }
-
-const assetEmoji: Record<string, string> = {
-  ETH: '◆',
-  BTC: '₿',
-  SOL: '◎',
-  XRP: '✕',
-  DOGE: 'Ð',
-  BNB: 'B',
-  AVAX: 'A',
-};
 
 /**
  * Compact Polymarket-style market card.
@@ -115,15 +106,7 @@ export function MarketCard({
       {/* Header — asset glyph + question; lead probability on the right */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-start gap-2">
-          <span
-            aria-hidden
-            className={cn(
-              'num mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm font-bold',
-              'bg-bg-subtle text-text'
-            )}
-          >
-            {assetEmoji[market.asset] ?? market.asset.slice(0, 1)}
-          </span>
+          <TokenIcon asset={market.asset} size={24} className="mt-0.5" />
           <p className="line-clamp-2 min-h-[34px] text-sm font-medium leading-snug text-text">
             {market.question}
           </p>

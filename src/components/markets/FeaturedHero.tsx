@@ -4,19 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 import type { MarketView } from '@/lib/sdk/markets';
 import { TimerBadge } from '@/components/ui/TimerBadge';
+import { TokenIcon } from '@/components/ui/TokenIcon';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
-
-const ASSET_GLYPH: Record<string, string> = {
-  ETH: '◆',
-  BTC: '₿',
-  SOL: '◎',
-  XRP: '✕',
-  DOGE: 'Ð',
-  BNB: 'B',
-  AVAX: 'A',
-};
 
 const ROTATE_MS = 9_000;
 
@@ -174,12 +165,7 @@ function HeroCard({
         onClick={() => onSelect(market.id)}
         className="mt-3 flex items-start gap-3 text-left press-scale"
       >
-        <span
-          aria-hidden
-          className="num flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-bg-subtle text-xl font-bold text-text"
-        >
-          {ASSET_GLYPH[market.asset] ?? market.asset.slice(0, 1)}
-        </span>
+        <TokenIcon asset={market.asset} size={40} />
         <div className="min-w-0 flex-1">
           <h3 className="line-clamp-2 text-md font-semibold leading-snug text-text">
             {market.question}
