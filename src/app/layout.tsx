@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import { Providers } from './providers';
 import { themeBootScript } from '@/lib/theme';
 import './globals.css';
@@ -8,6 +8,16 @@ const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
   weight: ['400', '500', '600', '700'],
+  display: 'swap',
+});
+
+// Display/brand face — wordmark + headings. Inter stays the body/UI workhorse
+// and JetBrains Mono stays for tabular data; Space Grotesk only adds the
+// geometric crypto-native personality on top-level type.
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-space-grotesk',
+  weight: ['500', '600', '700'],
   display: 'swap',
 });
 
@@ -74,7 +84,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrains.variable}`}
+      className={`${inter.variable} ${jetbrains.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
       <head>

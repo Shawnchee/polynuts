@@ -26,7 +26,7 @@ export function TopNav({ active = '/' }: { active?: string }) {
           <Link
             href="/"
             aria-label="Polynuts home"
-            className="flex cursor-pointer select-none items-center text-md font-bold tracking-tight transition-opacity hover:opacity-90"
+            className="font-display flex cursor-pointer select-none items-center text-md font-bold tracking-tight transition-opacity hover:opacity-90"
           >
             <span className="text-brand">poly</span>
             <span className="text-text">nuts</span>

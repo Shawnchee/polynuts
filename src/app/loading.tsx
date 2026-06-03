@@ -9,7 +9,7 @@ export default function Loading() {
       <div className="glass sticky top-0 z-30 border-b border-line">
         <div className="mx-auto flex h-14 max-w-page items-center justify-between px-6">
           <div className="flex items-center gap-8">
-            <div className="select-none text-md font-bold tracking-tight">
+            <div className="font-display select-none text-md font-bold tracking-tight">
               <span className="text-brand">poly</span>
               <span className="text-text">nuts</span>
             </div>

@@ -22,7 +22,7 @@ export default function GlobalError({
     <html lang="en" data-theme="dark">
       <body>
         <div className="flex min-h-dvh flex-col items-center justify-center bg-bg px-6 text-center text-text">
-          <div className="select-none text-2xl font-bold tracking-tight">
+          <div className="font-display select-none text-2xl font-bold tracking-tight">
             <span className="text-brand">poly</span>
             <span className="text-text">nuts</span>
           </div>

@@ -113,6 +113,15 @@ body::before {
     radial-gradient(circle at 90% 105%, rgba(167, 139, 250, 0.08), transparent 45%);
 }
 
+/* Space Grotesk is the display/brand face for headings; body stays on Inter.
+   Tracking is left to the per-size fontSize tokens (which already tighten the
+   larger steps), so this only swaps the family. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-space-grotesk), var(--font-inter), system-ui, sans-serif;
+}
+
 button {
   font-family: inherit;
 }
