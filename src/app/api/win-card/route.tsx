@@ -16,14 +16,20 @@ export async function GET(req: NextRequest) {
   const won = result === 'win';
   const bet = clampNumber(params.get('bet'), 0, 9_999_999) ?? 100;
   const payout = clampNumber(params.get('payout'), 0, 99_999_999) ?? Math.round(bet * 1.61);
-  const direction = (params.get('direction') ?? 'PUMP').toUpperCase(); // PUMP | DUMP | RANGE
-  const headline =
-    params.get('q') ??
-    (direction === 'DUMP'
-      ? 'ETH dumped'
-      : direction === 'RANGE'
-      ? 'ETH stayed in range'
-      : 'ETH pumped');
+  // Whitelist direction to the three known values so a malformed param can't
+  // leak arbitrary text into the accent-colour switch below.
+  const dirRaw = (params.get('direction') ?? 'PUMP').toUpperCase();
+  const direction = dirRaw === 'DUMP' || dirRaw === 'RANGE' ? dirRaw : 'PUMP';
+  // `q` is fully user-controlled and rendered into a public, uncached edge
+  // image — cap its length so it can't be abused to render huge text payloads.
+  const rawHeadline = params.get('q');
+  const headline = rawHeadline
+    ? rawHeadline.slice(0, 80)
+    : direction === 'DUMP'
+    ? 'ETH dumped'
+    : direction === 'RANGE'
+    ? 'ETH stayed in range'
+    : 'ETH pumped';
   const multiplier = bet > 0 ? (payout / bet).toFixed(2) : '—';
 
   const dirAccent =
@@ -186,6 +192,13 @@ export async function GET(req: NextRequest) {
     {
       width: 1200,
       height: 630,
+      headers: {
+        // Output is deterministic per query string, so cache hard at the CDN.
+        // Without this the public edge route re-renders an image on every hit,
+        // which is the abuse/cost vector for an unauthenticated OG endpoint.
+        'Cache-Control':
+          'public, immutable, no-transform, max-age=86400, s-maxage=604800',
+      },
     }
   );
 }
