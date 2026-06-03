@@ -9,3 +9,6 @@ out
 .vercel
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# Playwright MCP QA artifacts
+.playwright-mcp/
