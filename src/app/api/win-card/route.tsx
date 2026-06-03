@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
   const amountSign = isPending ? '+' : won ? '+' : '−';
   const amountLabel = isPending ? 'Win up to' : won ? 'Won' : 'Lost';
 
-  return new ImageResponse(
+  const image = new ImageResponse(
     (
       <div
         style={{
@@ -192,15 +192,20 @@ export async function GET(req: NextRequest) {
     {
       width: 1200,
       height: 630,
-      headers: {
-        // Output is deterministic per query string, so cache hard at the CDN.
-        // Without this the public edge route re-renders an image on every hit,
-        // which is the abuse/cost vector for an unauthenticated OG endpoint.
-        'Cache-Control':
-          'public, immutable, no-transform, max-age=86400, s-maxage=604800',
-      },
     }
   );
+
+  // Output is deterministic per query string, so cache hard at the CDN —
+  // without this the public edge route re-renders an image on every hit, the
+  // abuse/cost vector for an unauthenticated OG endpoint. next/og injects its
+  // own `Cache-Control: …max-age=31536000` default; passing headers to the
+  // constructor APPENDS to it, yielding a malformed header with two max-age
+  // values. Headers.set() replaces all values, guaranteeing a single policy.
+  image.headers.set(
+    'Cache-Control',
+    'public, immutable, no-transform, max-age=86400, s-maxage=604800'
+  );
+  return image;
 }
 
 function clampNumber(input: string | null, min: number, max: number): number | null {
