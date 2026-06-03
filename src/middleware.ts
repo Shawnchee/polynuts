@@ -25,7 +25,7 @@ export function middleware(req: NextRequest) {
   // Locally and on non-Vercel hosts, it is undefined — let the request through.
   const country = (req.geo?.country ?? '').toUpperCase();
   if (country && blocked.has(country)) {
-    // Redirect (302) to /not-available so the URL bar reflects the block and
+    // Redirect (307) to /not-available so the URL bar reflects the block and
     // crawlers / compliance audits see a distinct route, not a 200 with the
     // home page rendered behind a rewrite. /not-available is excluded from
     // the matcher above so the redirect terminates there.
