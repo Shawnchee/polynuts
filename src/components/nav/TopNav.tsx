@@ -31,7 +31,7 @@ export function TopNav({ active = '/' }: { active?: string }) {
             <span className="text-brand">poly</span>
             <span className="text-text">nuts</span>
           </Link>
-          <nav aria-label="Primary" className="flex items-center gap-1">
+          <nav aria-label="Primary" className="hidden items-center gap-1 sm:flex">
             {tabs.map((t) => {
               const isActive = active === t.href;
               return (

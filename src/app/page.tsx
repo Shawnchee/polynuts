@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { TopNav } from '@/components/nav/TopNav';
+import { BottomNav } from '@/components/nav/BottomNav';
 import { FilterStrip } from '@/components/markets/FilterStrip';
 import { MarketCard } from '@/components/markets/MarketCard';
 import { FeaturedHero } from '@/components/markets/FeaturedHero';
@@ -124,7 +125,7 @@ export default function MarketsPage() {
       <NetworkGuard />
       <FilterStrip count={filtered.length} expiryGroups={expiryGroups} />
 
-      <main className="mx-auto max-w-page px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-page px-4 pt-6 pb-20 sm:px-6 sm:pb-6">
         <div className="flex flex-col gap-6 lg:flex-row">
           <section className="min-w-0 flex-1 space-y-6">
             {isLoading && <SkeletonGrid />}
@@ -199,6 +200,7 @@ export default function MarketsPage() {
           </div>
         </div>
       </main>
+      <BottomNav />
     </div>
   );
 }
