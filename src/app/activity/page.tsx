@@ -126,7 +126,7 @@ export default function ActivityPage() {
 
   return (
     <PageShell active="/activity">
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6">
         <header className="flex flex-col gap-1">
           <h1 className="text-xl font-bold text-text">Activity</h1>
           <p className="text-sm text-text-muted">

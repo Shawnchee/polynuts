@@ -258,7 +258,7 @@ export function TradePanel({
       return <TradePanelSkeleton />;
     }
     return (
-      <div className="rounded-xl border border-line bg-bg-elev p-6 animate-fade-in">
+      <div className="rounded-xl border border-line bg-bg-elev p-4 animate-fade-in">
         <p className="text-sm text-text-dim">Select a market to place a bet.</p>
       </div>
     );

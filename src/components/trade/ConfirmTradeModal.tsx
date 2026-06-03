@@ -257,7 +257,7 @@ export function ConfirmTradeModal({
     >
       <div
         ref={dialogRef}
-        className="w-full max-w-md rounded-xl border border-line bg-bg-elev p-5 shadow-xl"
+        className="w-full max-w-md rounded-xl border border-line bg-bg-elev p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">

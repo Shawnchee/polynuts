@@ -26,7 +26,7 @@ export default function Loading() {
       {/* Content placeholder */}
       <main className="mx-auto max-w-page px-6 py-6">
         <div className="h-8 w-48 animate-pulse rounded bg-bg-subtle" />
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}

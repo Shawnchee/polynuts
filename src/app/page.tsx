@@ -189,7 +189,7 @@ export default function MarketsPage() {
             )}
           </section>
 
-          <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[320px]">
+          <div className="flex w-full shrink-0 flex-col gap-6 lg:w-[320px]">
             <div className="lg:sticky lg:top-20">
               <TradePanel market={selectedMarket} isLoading={isLoading} />
             </div>
