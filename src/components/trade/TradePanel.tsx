@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { ethers } from 'ethers';
 import {
   isThetanutsError,
+  OPTION_BOOK_ABI,
   OrderExpiredError,
   InsufficientAllowanceError,
   InsufficientBalanceError,
@@ -367,6 +368,56 @@ export function TradePanel({
       );
       // eslint-disable-next-line no-console
       console.info('[polynuts] fillOrder done', { txHash: receipt?.hash });
+
+      // Write this trade to Supabase immediately so it appears in the
+      // activity/leaderboard without waiting for an indexer sync.
+      // Fire-and-forget — never block the success UX on this.
+      if (receipt?.hash && address) {
+        try {
+          // Parse the OrderFilled event from the receipt to get the deployed
+          // option contract address (not available in the order's rawApiData).
+          const iface = new ethers.Interface(OPTION_BOOK_ABI as ethers.InterfaceAbi);
+          let optionId: string | null = null;
+          for (const log of receipt.logs ?? []) {
+            try {
+              const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+              if (parsed?.name === 'OrderFilled') {
+                // OrderFilled args: (nonce, buyer, seller, optionAddress, ...)
+                optionId = parsed.args[3] as string;
+                break;
+              }
+            } catch { /* skip non-matching logs */ }
+          }
+
+          if (optionId) {
+            const label = `${trade.market.asset} ${trade.market.strikes
+              .map((s) => `$${s.toLocaleString('en-US', { maximumFractionDigits: 0 })}`)
+              .join(' / ')}`;
+            const payload = {
+              tx_hash: receipt.hash,
+              option_id: optionId.toLowerCase(),
+              taker_address: address.toLowerCase(),
+              market_label: label,
+              side: trade.market.direction,
+              contracts: Number(fromBigInt(trade.numContracts, 6)),
+              notional_usdc: trade.amount,
+              entry_price: Number(fromBigInt(trade.market.pricePerContract, 8)),
+              created_at: new Date().toISOString(),
+            };
+            fetch('/api/me/trades', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            }).catch((err) => {
+              // eslint-disable-next-line no-console
+              console.warn('[polynuts] write-on-fill failed (non-critical)', err);
+            });
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[polynuts] receipt parse failed (non-critical)', err);
+        }
+      }
 
       const explorer = signerClient.chainConfig.explorerUrl;
       const txHash = receipt?.hash;
