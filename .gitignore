@@ -17,3 +17,6 @@ tsconfig.tsbuildinfo
 # Claude Code project settings (local overrides)
 .claude/settings.local.json
 .claude/skills/
+
+# Private operator notes (not for repo)
+my_side.md
