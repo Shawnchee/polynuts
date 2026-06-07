@@ -10,11 +10,12 @@ export const config = {
 
 /**
  * Comma-separated ISO country codes — e.g. "US,IR,KP,SY,CU,RU,BY".
- * Defaults to US-only blocking. Override with NEXT_PUBLIC_BLOCKED_COUNTRIES
- * (or BLOCKED_COUNTRIES, server-only) for additional jurisdictions.
+ * Defaults to US-only blocking. Set BLOCKED_COUNTRIES in server env to override.
+ * Never use NEXT_PUBLIC_ here — this list runs server/edge only and should
+ * not be embedded in the client bundle.
  */
 const blocked = new Set(
-  (process.env.BLOCKED_COUNTRIES ?? process.env.NEXT_PUBLIC_BLOCKED_COUNTRIES ?? 'US')
+  (process.env.BLOCKED_COUNTRIES ?? 'US')
     .split(',')
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean)
