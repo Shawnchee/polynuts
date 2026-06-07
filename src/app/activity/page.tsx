@@ -655,9 +655,11 @@ function directionOf(
     if (strikeCount >= 2) return 'RANGE';
     return undefined;
   }
-  if (t === 0 || t === 2) return 'PUMP';
-  if (t === 1 || t === 3) return 'DUMP';
-  if (t === 4 || t === 5) return 'RANGE';
+  // Matches sideFromOptionType in src/lib/supabase/sync.ts — must stay in sync
+  // with what is stored in the DB so the non-DB (indexer) path shows the same labels.
+  if (t === 0 || t === 3) return 'PUMP';
+  if (t === 1 || t === 4) return 'DUMP';
+  if (t === 2 || t === 5) return 'RANGE';
   return undefined;
 }
 
