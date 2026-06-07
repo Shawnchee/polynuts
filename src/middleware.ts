@@ -22,9 +22,11 @@ const blocked = new Set(
 );
 
 export function middleware(req: NextRequest) {
-  // On Vercel, geo is populated automatically from edge region IP lookup.
-  // Locally and on non-Vercel hosts, it is undefined — let the request through.
-  const country = (req.geo?.country ?? '').toUpperCase();
+  // Next 16 removed `req.geo`; on Vercel the edge populates the
+  // `x-vercel-ip-country` header from the same IP lookup. Locally and on
+  // non-Vercel hosts the header is absent — country is '' and we let the
+  // request through, matching the previous behaviour.
+  const country = (req.headers.get('x-vercel-ip-country') ?? '').toUpperCase();
   if (country && blocked.has(country)) {
     // Redirect (307) to /not-available so the URL bar reflects the block and
     // crawlers / compliance audits see a distinct route, not a 200 with the

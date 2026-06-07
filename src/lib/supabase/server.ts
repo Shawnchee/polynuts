@@ -15,11 +15,12 @@ export function hasSupabaseConfig(): boolean {
  * Cookie-aware server client for RSC / route handlers. Reads go through
  * this; honors RLS as the anonymous role.
  */
-export function getSupabaseServer() {
+export async function getSupabaseServer() {
   if (!URL || !ANON) {
     throw new Error('Supabase env vars missing (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)');
   }
-  const cookieStore = cookies();
+  // Next 16: cookies() is async.
+  const cookieStore = await cookies();
   return createServerClient(URL, ANON, {
     cookies: {
       get(name: string) {

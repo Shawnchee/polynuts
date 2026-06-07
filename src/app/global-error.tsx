@@ -46,6 +46,10 @@ export default function GlobalError({
             >
               Try again
             </button>
+            {/* Intentional hard navigation: the root layout has crashed, so a
+                full browser reload recovers cleanly. A client-side <Link> would
+                reuse the broken React tree. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/"
               className="press-scale rounded-md border border-line bg-bg-elev px-4 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-hover"
