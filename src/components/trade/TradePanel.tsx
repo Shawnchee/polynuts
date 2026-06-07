@@ -46,7 +46,7 @@ type ChartTab = 'payout' | 'spot';
 // accepts any value as the user types and validates >= MIN_BET only
 // at submit, so partial input ("1.", "0.") doesn't get clobbered.
 const SIZES = [1, 5, 10, 25, 100] as const;
-const MIN_BET = 1;
+const MIN_BET = 0.5;
 
 interface PreviewState {
   numContracts: bigint;
@@ -282,7 +282,7 @@ export function TradePanel({
       return;
     }
     if (amount < MIN_BET) {
-      toast.error(`Minimum bet is $${MIN_BET} USDC`);
+      toast.error(`Minimum bet is $${MIN_BET.toFixed(2)} USDC`);
       return;
     }
     if (!preview) {
@@ -570,7 +570,7 @@ export function TradePanel({
             // at submit time against MIN_BET.
             type="text"
             inputMode="decimal"
-            placeholder={`min $${MIN_BET}`}
+            placeholder={`min $${MIN_BET.toFixed(2)}`}
             value={amountInput}
             onChange={(e) => {
               // Permit only digits + a single dot — strip everything else
@@ -584,7 +584,7 @@ export function TradePanel({
         </div>
         {amountInput !== '' && amount > 0 && amount < MIN_BET && (
           <p className="mt-1 text-xs text-dump dark:text-dump-dark">
-            Minimum bet is ${MIN_BET} USDC
+            Minimum bet is ${MIN_BET.toFixed(2)} USDC
           </p>
         )}
       </div>
