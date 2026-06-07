@@ -143,10 +143,11 @@ for (const h of settles) {
   let pnlUsdRaw = 'n/a';
   if (matched) {
     pnlUsdRaw = matched.pnlUsd ?? 'null';
-    indexerPnl = matched.pnlUsd != null ? Number(matched.pnlUsd) : NaN;
+    // pnlUsd and costUsd are 8-decimal integer strings — divide by 1e8 to get USD.
+    indexerPnl = matched.pnlUsd != null ? Number(matched.pnlUsd) / 1e8 : NaN;
     const buyerEntry = matched.pnlEntries?.find((e) => e.side === 'buyer');
     if (buyerEntry?.costUsd != null) {
-      indexerCost = Number(buyerEntry.costUsd);
+      indexerCost = Number(buyerEntry.costUsd) / 1e8;
     } else if (matched.settlement && Number.isFinite(indexerPnl)) {
       const payout = Number(
         client.utils.fromUsdcDecimals(matched.settlement.payoutBuyer),
