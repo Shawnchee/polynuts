@@ -6,7 +6,7 @@ import { TrendingUp, Wallet, Trophy, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const tabs = [
-  { href: '/', label: 'Markets', Icon: TrendingUp },
+  { href: '/markets', label: 'Markets', Icon: TrendingUp },
   { href: '/portfolio', label: 'Portfolio', Icon: Wallet },
   { href: '/leaderboard', label: 'Leaderboard', Icon: Trophy },
   { href: '/activity', label: 'Activity', Icon: Activity },
@@ -26,8 +26,7 @@ export function BottomNav() {
     >
       <div className="mx-auto flex max-w-page items-stretch justify-around">
         {tabs.map(({ href, label, Icon }) => {
-          const isActive =
-            href === '/' ? pathname === '/' : pathname.startsWith(href);
+          const isActive = pathname === href || pathname.startsWith(href + '/');
           return (
             <Link
               key={href}

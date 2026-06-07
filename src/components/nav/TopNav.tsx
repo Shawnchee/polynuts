@@ -9,7 +9,7 @@ import { ChainStatusChip } from '@/components/nav/NetworkGuard';
 import { cn } from '@/lib/utils';
 
 const tabs = [
-  { href: '/', label: 'Markets' },
+  { href: '/markets', label: 'Markets' },
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/activity', label: 'Activity' },
