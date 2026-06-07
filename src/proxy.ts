@@ -21,7 +21,7 @@ const blocked = new Set(
     .filter(Boolean)
 );
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   // Next 16 removed `req.geo`; on Vercel the edge populates the
   // `x-vercel-ip-country` header from the same IP lookup. Locally and on
   // non-Vercel hosts the header is absent — country is '' and we let the
