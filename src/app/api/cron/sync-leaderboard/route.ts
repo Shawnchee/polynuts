@@ -1,37 +1,101 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
+import { type OrderFillEvent } from '@thetanuts-finance/thetanuts-client';
 import { getSupabaseService } from '@/lib/supabase/server';
-import { getSyncClient, syncUserFromIndexer } from '@/lib/supabase/sync';
+import { getSyncClient, writeFillToDb, syncSettlementsOnly, type FillPayload } from '@/lib/supabase/sync';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { ThetanutsClient } from '@thetanuts-finance/thetanuts-client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Optional — sync-on-visit (POST /api/me/trades) is the primary writer
-// now. This cron exists for the leaderboard cold-start case where you
-// want to keep inactive wallets' settlements current. Configure Vercel
-// Cron (or Supabase pg_cron) to POST here every N minutes with
-// `Authorization: Bearer ${CRON_SECRET}`.
+// Cron route for the leaderboard — runs every 30 minutes via Vercel Cron.
+// Two jobs in one pass:
+//   1. Recover fills from the last ~3 000 blocks that went through our referrer
+//      address (handles the case where the UI's write-on-fill missed a trade).
+//   2. Settle open trades for every known trader.
 //
-// If you don't need cross-user leaderboards covering inactive wallets,
-// this route can be safely deleted. The shared sync logic lives in
-// `src/lib/supabase/sync.ts`.
+// Both GET and POST require Authorization: Bearer <CRON_SECRET>.
+// Vercel Cron automatically sends this header when CRON_SECRET is set in
+// project env vars — no extra config needed.
 
-export async function GET() {
-  return NextResponse.json(
-    { error: 'method not allowed — POST with Authorization: Bearer <CRON_SECRET>' },
-    { status: 405, headers: { Allow: 'POST' } },
+async function runSync(sb: SupabaseClient, client: ThetanutsClient) {
+  const errors: Array<{ context: string; message: string }> = [];
+
+  // 1. Get current block number.
+  const currentBlock: number = await client.provider.getBlockNumber();
+
+  // 2. Fetch fills for the last ~3 000 blocks.
+  const fills: OrderFillEvent[] = await client.events.getOrderFillEvents({
+    fromBlock: Math.max(0, currentBlock - 3000),
+  });
+
+  // 3. Filter to fills that went through our referrer address.
+  const referrerAddress = process.env.NEXT_PUBLIC_REFERRER_ADDRESS ?? '';
+  const ourFills = fills.filter(
+    (f) => f.referrer.toLowerCase() === referrerAddress.toLowerCase(),
   );
+
+  // 4. Write each of our fills to DB (recovery path).
+  for (const fill of ourFills) {
+    const payload: FillPayload = {
+      tx_hash: fill.transactionHash,
+      option_id: fill.option.toLowerCase(),
+      taker_address: fill.taker.toLowerCase(),
+      market_label: 'recovered',
+      side: 'unknown',
+      contracts: Number(fill.numContracts) / 1e6,
+      notional_usdc: (Number(fill.numContracts) / 1e6) * (Number(fill.price) / 1e8),
+      entry_price: Number(fill.price) / 1e8,
+      created_at: new Date().toISOString(),
+    };
+    try {
+      await writeFillToDb(sb, payload);
+    } catch (e) {
+      errors.push({
+        context: `writeFillToDb:${fill.transactionHash}`,
+        message: (e as Error).message,
+      });
+    }
+  }
+
+  // 5. Get all known traders.
+  const { data: traders } = await sb.from('traders').select('address');
+
+  // 6. Sync settlements for each trader.
+  let settlementsUpserted = 0;
+  for (const trader of traders ?? []) {
+    try {
+      const r = await syncSettlementsOnly(sb, client, (trader as { address: string }).address);
+      settlementsUpserted += r.settlementsUpserted;
+    } catch (e) {
+      errors.push({
+        context: `syncSettlementsOnly:${(trader as { address: string }).address}`,
+        message: (e as Error).message,
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    recoveredFills: ourFills.length,
+    tradersScanned: traders?.length ?? 0,
+    settlementsUpserted,
+    errors,
+  };
 }
 
-export async function POST(req: NextRequest) {
+function checkPostAuth(req: NextRequest): boolean {
   const auth = req.headers.get('authorization') ?? '';
   const expected = process.env.CRON_SECRET;
-  if (!expected) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  }
+  if (!expected) return false;
   const got = Buffer.from(auth);
   const want = Buffer.from(`Bearer ${expected}`);
-  if (got.length !== want.length || !timingSafeEqual(got, want)) {
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+export async function GET(req: NextRequest) {
+  if (!checkPostAuth(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
@@ -44,34 +108,24 @@ export async function POST(req: NextRequest) {
 
   const sb = getSupabaseService();
   const client = getSyncClient();
+  const result = await runSync(sb, client);
+  return NextResponse.json(result);
+}
 
-  const { data: existing, error: existingErr } = await sb
-    .from('traders')
-    .select('address');
-  if (existingErr) {
-    return NextResponse.json({ error: existingErr.message }, { status: 500 });
-  }
-  const addresses = ((existing ?? []) as Array<{ address: string }>).map((r) => r.address);
-
-  let tradesUpserted = 0;
-  let settlementsUpserted = 0;
-  const errors: Array<{ address: string; message: string }> = [];
-
-  for (const addr of addresses) {
-    try {
-      const r = await syncUserFromIndexer(sb, client, addr);
-      tradesUpserted += r.tradesUpserted;
-      settlementsUpserted += r.settlementsUpserted;
-    } catch (e) {
-      errors.push({ address: addr, message: (e as Error).message });
-    }
+export async function POST(req: NextRequest) {
+  if (!checkPostAuth(req)) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    addresses: addresses.length,
-    tradesUpserted,
-    settlementsUpserted,
-    errors,
-  });
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY
+  ) {
+    return NextResponse.json({ error: 'supabase not configured' }, { status: 500 });
+  }
+
+  const sb = getSupabaseService();
+  const client = getSyncClient();
+  const result = await runSync(sb, client);
+  return NextResponse.json(result);
 }

@@ -1,6 +1,7 @@
 import 'server-only';
 import {
   ThetanutsClient,
+  OPTION_BOOK_ABI,
   type Position,
   type TradeHistory,
 } from '@thetanuts-finance/thetanuts-client';
@@ -20,6 +21,54 @@ export function getSyncClient(): ThetanutsClient {
     chainId: chainId as 8453,
     provider,
   });
+}
+
+const OPTION_BOOK_IFACE = new ethers.Interface(OPTION_BOOK_ABI as ethers.InterfaceAbi);
+
+/**
+ * Verify that a tx_hash is a real, mined OrderFilled transaction whose buyer
+ * matches the claimed taker_address. Used by POST /api/me/trades to prevent
+ * anyone from writing fake trade records for wallets they don't control.
+ *
+ * OrderFilled event args: (nonce, buyer, seller, optionAddress, ...)
+ */
+export async function verifyFillOnChain(
+  client: ThetanutsClient,
+  txHash: string,
+  takerAddress: string,
+  optionId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const receipt = await client.provider.getTransactionReceipt(txHash);
+  if (!receipt) return { ok: false, reason: 'transaction not found on chain' };
+
+  const taker = takerAddress.toLowerCase();
+
+  // The wallet that sent the transaction must be the claimed taker.
+  if (receipt.from.toLowerCase() !== taker) {
+    return { ok: false, reason: 'tx sender does not match taker_address' };
+  }
+
+  // Find the OrderFilled log and verify the option address.
+  for (const log of receipt.logs) {
+    try {
+      const parsed = OPTION_BOOK_IFACE.parseLog({ topics: [...log.topics], data: log.data });
+      if (parsed?.name !== 'OrderFilled') continue;
+
+      // args: (nonce, buyer, seller, optionAddress, ...)
+      const buyer = (parsed.args[1] as string).toLowerCase();
+      const optionAddress = (parsed.args[3] as string).toLowerCase();
+
+      if (buyer !== taker) {
+        return { ok: false, reason: 'buyer in OrderFilled event does not match taker_address' };
+      }
+      if (optionAddress !== optionId.toLowerCase()) {
+        return { ok: false, reason: 'optionAddress in OrderFilled event does not match option_id' };
+      }
+      return { ok: true };
+    } catch { /* skip logs from other contracts */ }
+  }
+
+  return { ok: false, reason: 'no matching OrderFilled event in transaction' };
 }
 
 export function bigintToNumber(value: bigint, decimals: number): number {
@@ -96,6 +145,117 @@ function indexerPnlUsd(p: Position | undefined): number | null {
 export interface SyncResult {
   tradesUpserted: number;
   settlementsUpserted: number;
+}
+
+// ─── Platform-specific write-on-fill ────────────────────────────────────────
+// Written directly from the UI after fillOrder succeeds. Only ever contains
+// trades placed on Polynuts — the indexer is never consulted for entry data.
+
+export interface FillPayload {
+  tx_hash: string;
+  option_id: string;
+  taker_address: string;
+  market_label: string;
+  side: string;
+  contracts: number;
+  notional_usdc: number;
+  entry_price: number;
+  created_at: string;
+}
+
+export async function writeFillToDb(
+  sb: SupabaseClient,
+  data: FillPayload,
+): Promise<void> {
+  const { error: traderErr } = await sb
+    .from('traders')
+    .upsert({ address: data.taker_address }, { onConflict: 'address' });
+  if (traderErr) throw traderErr;
+
+  const { error } = await sb
+    .from('trades')
+    .upsert(data, { onConflict: 'tx_hash,option_id' });
+  if (error) throw error;
+}
+
+// ─── Settlement-only sync ────────────────────────────────────────────────────
+// Checks the indexer for settlements on trades already in our DB (written
+// via writeFillToDb). Never adds new trade rows — only updates settlements.
+// This keeps the indexer out of the entry path while still getting accurate
+// PnL math for settled options (which the indexer computes correctly across
+// all product families including inverse-collateral).
+
+export async function syncSettlementsOnly(
+  sb: SupabaseClient,
+  client: ThetanutsClient,
+  address: string,
+): Promise<{ settlementsUpserted: number }> {
+  const addr = address.toLowerCase();
+
+  // Fetch only open (unsettled) trades for this address.
+  const { data: dbTrades, error: dbErr } = await sb
+    .from('trades')
+    .select('id, tx_hash, option_id, settlements(id)')
+    .eq('taker_address', addr);
+  if (dbErr) throw dbErr;
+
+  const openTrades = (dbTrades ?? []).filter(
+    (t) =>
+      !Array.isArray((t as { settlements?: unknown[] }).settlements) ||
+      ((t as { settlements: unknown[] }).settlements).length === 0,
+  );
+  if (openTrades.length === 0) return { settlementsUpserted: 0 };
+
+  const byKey = new Map<string, number>(
+    openTrades.map((t) => [
+      `${(t as { tx_hash: string }).tx_hash}:${(t as { option_id: string }).option_id}`,
+      (t as { id: number }).id,
+    ]),
+  );
+
+  const [history, positions]: [TradeHistory[], Position[]] = await Promise.all([
+    client.api.getUserHistoryFromIndexer(addr),
+    client.api.getUserPositionsFromIndexer(addr),
+  ]);
+
+  const settlementRows = history
+    .filter(
+      (h) =>
+        h.settlement &&
+        h.buyer.toLowerCase() === addr &&
+        byKey.has(`${h.txHash}:${h.option.address}`),
+    )
+    .map((h) => {
+      const tradeId = byKey.get(`${h.txHash}:${h.option.address}`)!;
+      const payout = bigintToNumber(h.settlement!.payoutBuyer, USDC_DECIMALS);
+      const matched = findBuyerPosition(h, positions);
+      let pnl = indexerPnlUsd(matched);
+      if (pnl == null) {
+        const cost = indexerCostUsd(matched);
+        if (cost != null) pnl = payout - cost;
+      }
+      if (pnl == null) return null;
+      return {
+        trade_id: tradeId,
+        settle_price: bigintToNumber(h.settlement!.settlementPrice, PRICE_DECIMALS),
+        payout_usdc: payout,
+        pnl_usdc: pnl,
+        is_win: pnl > 0,
+        settled_at: new Date(Number(h.closeTimestamp) * 1000).toISOString(),
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+
+  let settlementsUpserted = 0;
+  if (settlementRows.length > 0) {
+    const { error, count } = await sb
+      .from('settlements')
+      .upsert(settlementRows, { onConflict: 'trade_id', count: 'exact' });
+    if (error) throw error;
+    settlementsUpserted = count ?? settlementRows.length;
+  }
+
+  return { settlementsUpserted };
 }
 
 /**
