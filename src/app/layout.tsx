@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
+import { Inter, JetBrains_Mono, Bricolage_Grotesque } from 'next/font/google';
 import { Providers } from './providers';
 import { themeBootScript } from '@/lib/theme';
 import './globals.css';
@@ -12,12 +12,12 @@ const inter = Inter({
 });
 
 // Display/brand face — wordmark + headings. Inter stays the body/UI workhorse
-// and JetBrains Mono stays for tabular data; Space Grotesk only adds the
-// geometric crypto-native personality on top-level type.
-const spaceGrotesk = Space_Grotesk({
+// and JetBrains Mono stays for tabular data; Bricolage Grotesque carries the
+// characterful, slightly-rebellious display personality on top-level type.
+const bricolage = Bricolage_Grotesque({
   subsets: ['latin'],
-  variable: '--font-space-grotesk',
-  weight: ['500', '600', '700'],
+  variable: '--font-bricolage',
+  weight: ['500', '600', '700', '800'],
   display: 'swap',
 });
 
@@ -84,7 +84,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrains.variable} ${spaceGrotesk.variable}`}
+      className={`${inter.variable} ${jetbrains.variable} ${bricolage.variable}`}
       suppressHydrationWarning
     >
       <head>

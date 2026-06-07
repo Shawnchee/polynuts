@@ -70,7 +70,7 @@ const config: Config = {
         sans: ['var(--font-inter)', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['var(--font-jetbrains)', 'ui-monospace', 'monospace'],
         display: [
-          'var(--font-space-grotesk)',
+          'var(--font-bricolage)',
           'var(--font-inter)',
           'system-ui',
           'sans-serif',
