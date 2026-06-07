@@ -35,6 +35,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from '@/app/api/me/trades/route';
 import { hasSupabaseConfig } from '@/lib/supabase/server';
 import { syncSettlementsOnly, writeFillToDb, verifyFillOnChain } from '@/lib/supabase/sync';
+import { resetRateLimit } from '@/lib/rate-limit';
 
 function makeRequest(params: Record<string, string>): NextRequest {
   const url = new URL('http://localhost/api/me/trades');
@@ -47,6 +48,7 @@ const VALID_TX = '0x' + 'a'.repeat(64);
 
 describe('GET /api/me/trades', () => {
   beforeEach(() => {
+    resetRateLimit();
     vi.mocked(hasSupabaseConfig).mockReturnValue(true);
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
   });
@@ -86,6 +88,22 @@ describe('GET /api/me/trades', () => {
     expect(body.syncError).toBe('indexer down');
     expect(body.rows).toHaveLength(1);
   });
+
+  it('returns 429 once the per-IP GET limit is exceeded', async () => {
+    const ip = '203.0.113.7';
+    const req = () => {
+      const url = new URL('http://localhost/api/me/trades');
+      url.searchParams.set('address', VALID_ADDR);
+      return new NextRequest(url, { headers: { 'x-forwarded-for': ip } });
+    };
+    // 60 allowed, the 61st is throttled.
+    for (let i = 0; i < 60; i++) {
+      expect((await GET(req() as never)).status).toBe(200);
+    }
+    const res = await GET(req() as never);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBeTruthy();
+  });
 });
 
 describe('POST /api/me/trades', () => {
@@ -110,6 +128,7 @@ describe('POST /api/me/trades', () => {
   }
 
   beforeEach(() => {
+    resetRateLimit();
     vi.mocked(hasSupabaseConfig).mockReturnValue(true);
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
   });
@@ -172,5 +191,22 @@ describe('POST /api/me/trades', () => {
     vi.mocked(verifyFillOnChain).mockRejectedValueOnce(new Error('RPC timeout'));
     const res = await POST(makePost(validPayload) as never);
     expect(res.status).toBe(403);
+  });
+
+  it('returns 429 once the per-IP POST limit is exceeded', async () => {
+    const ip = '203.0.113.9';
+    const post = () =>
+      new NextRequest('http://localhost/api/me/trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-forwarded-for': ip },
+        body: JSON.stringify(validPayload),
+      });
+    // 20 allowed, the 21st is throttled.
+    for (let i = 0; i < 20; i++) {
+      expect((await POST(post() as never)).status).toBe(200);
+    }
+    const res = await POST(post() as never);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBeTruthy();
   });
 });

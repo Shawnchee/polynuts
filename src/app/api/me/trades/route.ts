@@ -11,14 +11,34 @@ import {
   verifyFillOnChain,
   type FillPayload,
 } from '@/lib/supabase/sync';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
+// Both handlers fan out to a paid RPC / indexer, so cap per-IP request rate.
+// GET (read + settlement sync) is polled by the portfolio page; POST (write +
+// on-chain verification, the costlier path) fires once per placed bet.
+const GET_LIMIT = 60;
+const POST_LIMIT = 20;
+const WINDOW_MS = 60_000;
+
+function tooMany(req: NextRequest, bucket: string, limit: number): NextResponse | null {
+  const { allowed, retryAfterMs } = rateLimit(`${bucket}:${clientIp(req)}`, limit, WINDOW_MS);
+  if (allowed) return null;
+  return NextResponse.json(
+    { error: 'rate limit exceeded' },
+    { status: 429, headers: { 'Retry-After': String(Math.ceil(retryAfterMs / 1000)) } },
+  );
+}
+
 // ─── GET: read this user's trades from Supabase, settle any open ones ────────
 export async function GET(req: NextRequest) {
+  const limited = tooMany(req, 'GET', GET_LIMIT);
+  if (limited) return limited;
+
   if (!hasSupabaseConfig() || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
       { error: 'supabase not configured' },
@@ -58,6 +78,9 @@ export async function GET(req: NextRequest) {
 // Called client-side right after the tx confirms. This is the only way trades
 // enter the DB — ensuring the leaderboard and activity only show Polynuts trades.
 export async function POST(req: NextRequest) {
+  const limited = tooMany(req, 'POST', POST_LIMIT);
+  if (limited) return limited;
+
   if (!hasSupabaseConfig() || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
       { error: 'supabase not configured' },
