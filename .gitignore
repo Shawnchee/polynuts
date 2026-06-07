@@ -12,3 +12,8 @@ tsconfig.tsbuildinfo
 
 # Playwright MCP QA artifacts
 .playwright-mcp/
+*.png
+
+# Claude Code project settings (local overrides)
+.claude/settings.local.json
+.claude/skills/
