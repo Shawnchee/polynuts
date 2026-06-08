@@ -28,7 +28,6 @@ import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { useUsdcAllowance, MAX_UINT256 } from '@/lib/sdk/useUsdcAllowance';
 import { DirectionTag } from '@/components/ui/DirectionTag';
-import { ShareWinCard } from '@/components/share/ShareWinCard';
 import { PayoutChart } from '@/components/trade/PayoutChart';
 import { TradingViewChart } from '@/components/trade/TradingViewChart';
 import {
@@ -423,20 +422,6 @@ export function TradePanel({
       const txHash = receipt?.hash;
       const url = txHash ? `${explorer}/tx/${txHash}` : explorer;
 
-      const shareArgs =
-        trade.maxPayoutAtFill != null
-          ? {
-              result: 'pending' as const,
-              bet: trade.amount,
-              payout: Number(
-                readClient.utils.fromUsdcDecimals(trade.maxPayoutAtFill)
-              ),
-              direction: trade.market.direction,
-              question: trade.market.question,
-              asset: trade.market.asset,
-            }
-          : null;
-
       toast.success(
         <div className="flex flex-col gap-2">
           <span>
@@ -450,12 +435,6 @@ export function TradePanel({
               View on Basescan
             </a>
           </span>
-          {shareArgs && shareArgs.payout > shareArgs.bet && (
-            <div className="flex items-center gap-2 pt-1">
-              <span className="text-xs text-text-muted">Brag a little —</span>
-              <ShareWinCard args={shareArgs} size="sm" />
-            </div>
-          )}
         </div>,
         { id: t, duration: 12_000 }
       );
