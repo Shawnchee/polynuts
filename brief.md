@@ -57,7 +57,7 @@ The difference matters:
 ```
 User Browser
 │
-├── Next.js 14 App Router (React 18, TypeScript, Tailwind)
+├── Next.js 16 App Router (React 19, TypeScript, Tailwind)
 │   ├── /markets  — browse active markets
 │   ├── /market/[id] — trade panel (bet, approve, fill)
 │   ├── /portfolio — open positions + PnL
@@ -87,7 +87,7 @@ User Browser
     └── /api/cron/sync-leaderboard — recover missed fills, sync settlements
 ```
 
-**Stack:** Next.js 14 · React 18 · TypeScript · Tailwind · wagmi v2 · viem · ethers v6 · RainbowKit · React Query · Zustand · Supabase · Base mainnet
+**Stack:** Next.js 16 · React 19 · TypeScript · Tailwind · wagmi v2 · viem · ethers v6 · RainbowKit · React Query · Zustand · Supabase · Base mainnet
 
 ---
 
