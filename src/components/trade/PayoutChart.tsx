@@ -60,13 +60,15 @@ function fmtCompactUsd(v: number): string {
 }
 
 export function PayoutChart({ market, numContracts, betUsd }: PayoutChartProps) {
-  const prices = useAppStore((s) => s.prices);
-  const spot =
+  // Subscribe only to the asset this chart actually renders — selecting
+  // the whole `prices` object re-renders on BTC ticks while viewing ETH.
+  const spot = useAppStore((s) =>
     market.asset === 'ETH'
-      ? prices.ETH
+      ? s.prices.ETH
       : market.asset === 'BTC'
-      ? prices.BTC
-      : undefined;
+      ? s.prices.BTC
+      : undefined
+  );
 
   // 41 evenly-spaced probe prices spanning 50% below lowest strike →
   // 50% above highest strike. Strikes for the simulatePayout call must

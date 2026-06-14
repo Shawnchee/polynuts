@@ -4,15 +4,15 @@ export const metadata = {
   title: 'Polynuts — Not available in your region',
 };
 
-export default function NotAvailablePage({
+export default async function NotAvailablePage({
   searchParams,
 }: {
-  searchParams: { from?: string };
+  searchParams: Promise<{ from?: string }>;
 }) {
-  const region = searchParams.from?.toUpperCase();
+  const region = (await searchParams).from?.toUpperCase();
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center px-6 text-center animate-fade-in">
-      <div className="select-none text-2xl font-bold tracking-tight">
+      <div className="font-display select-none text-2xl font-bold tracking-tight">
         <span className="text-brand">poly</span>
         <span className="text-text">nuts</span>
       </div>

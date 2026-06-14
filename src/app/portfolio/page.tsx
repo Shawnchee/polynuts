@@ -4,20 +4,28 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import { useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import type { Position, TradeHistory } from '@thetanuts-finance/thetanuts-client';
+import type { Position } from '@thetanuts-finance/thetanuts-client';
 import { PageShell } from '@/components/layout/PageShell';
 import { PnlPill } from '@/components/portfolio/PnlPill';
+import { TableSkeleton } from '@/components/portfolio/TableSkeleton';
 import { TimerBadge } from '@/components/ui/TimerBadge';
-import { usePositions, useTradeHistory } from '@/lib/sdk/usePortfolio';
+import { usePositions } from '@/lib/sdk/usePortfolio';
 import { getReadClient } from '@/lib/sdk/clients';
+import {
+  costBasisUsd,
+  hasFinitePnl,
+  isOpen,
+  pnlPct,
+  pnlUsd,
+} from '@/lib/sdk/positionLogic';
 import { fmtUsd, shortAddress } from '@/lib/utils';
 
 export default function PortfolioPage() {
   const { isConnected, address } = useAccount();
   const { data: positions = [], isLoading: posLoading } = usePositions();
-  const { data: history = [], isLoading: histLoading } = useTradeHistory();
 
-  const summary = useMemo(() => buildSummary(positions, history), [positions, history]);
+  const openPositions = useMemo(() => positions.filter(isOpen).filter(hasFinitePnl), [positions]);
+  const current = useMemo(() => buildCurrent(openPositions), [openPositions]);
 
   if (!isConnected) {
     return (
@@ -30,29 +38,26 @@ export default function PortfolioPage() {
   return (
     <PageShell active="/portfolio">
       <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-xl font-bold text-text">Portfolio</h1>
-          <p className="num mt-1 text-sm text-text-muted">{shortAddress(address ?? '')}</p>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h1 className="text-xl font-bold text-text">Portfolio</h1>
+            <p className="num mt-1 text-sm text-text-muted">{shortAddress(address ?? '')}</p>
+          </div>
+          <Link href="/activity" className="text-xs text-text-muted hover:text-text">
+            View history →
+          </Link>
         </div>
 
-        <SummaryBar summary={summary} loading={posLoading || histLoading} />
+        <CurrentBar current={current} loading={posLoading} />
 
         <Section
           title="Open Positions"
-          count={positions.length}
+          count={openPositions.length}
           loading={posLoading}
-          empty="No open positions yet."
+          empty={<EmptyPositions />}
+          skeleton={<TableSkeleton cols={7} rows={3} />}
         >
-          {positions.length > 0 && <PositionsTable rows={positions} />}
-        </Section>
-
-        <Section
-          title="Settled History"
-          count={history.length}
-          loading={histLoading}
-          empty="Settled trades will show up here once orders have expired."
-        >
-          {history.length > 0 && <HistoryTable rows={history} />}
+          {openPositions.length > 0 && <PositionsTable rows={openPositions} />}
         </Section>
       </div>
     </PageShell>
@@ -74,48 +79,52 @@ function ConnectGate() {
   );
 }
 
-interface Summary {
-  totalPnl: number;
-  winRate: number;
-  totalBets: number;
-  biggestWin: number;
+interface Current {
+  openCount: number;
+  exposure: number;
+  unrealizedPnl: number;
 }
 
-function buildSummary(positions: Position[], history: TradeHistory[]): Summary {
-  const client = getReadClient();
-  // pnl is in collateral 6-dec units (positions are USDC-collateralised)
-  let totalPnl = 0;
+function buildCurrent(positions: Position[]): Current {
+  let exposure = 0;
+  let unrealizedPnl = 0;
   for (const p of positions) {
-    totalPnl += Number(client.utils.fromUsdcDecimals(p.pnl));
+    const cost = costBasisUsd(p);
+    if (Number.isFinite(cost)) exposure += cost;
+    const pnl = pnlUsd(p);
+    if (Number.isFinite(pnl)) unrealizedPnl += pnl;
   }
-  const settled = history.filter((h) => h.type === 'settle' || h.type === 'exercise');
-  let realized = 0;
-  let biggestWin = 0;
-  let wins = 0;
-  for (const h of settled) {
-    const dec = h.collateralDecimals || 6;
-    // h.amount is in collateralDecimals units — formatAmount with display
-    // precision = decimals returns the full value as a string
-    const value = Number(client.utils.formatAmount(h.amount, dec, dec));
-    if (value > 0) wins++;
-    if (value > biggestWin) biggestWin = value;
-    realized += value;
-  }
-  totalPnl += realized;
-  const total = history.length;
-  const winRate = total > 0 ? wins / total : 0;
-  return { totalPnl, winRate, totalBets: total, biggestWin };
+  return { openCount: positions.length, exposure, unrealizedPnl };
 }
 
-function SummaryBar({ summary, loading }: { summary: Summary; loading: boolean }) {
-  const cells: { label: string; value: string; tone?: 'pnl' }[] = [
-    { label: 'Total P&L', value: fmtUsd(summary.totalPnl), tone: 'pnl' },
-    { label: 'Win Rate', value: `${Math.round(summary.winRate * 100)}%` },
-    { label: 'Total Bets', value: summary.totalBets.toString() },
-    { label: 'Biggest Win', value: fmtUsd(summary.biggestWin) },
+function CurrentBar({ current, loading }: { current: Current; loading: boolean }) {
+  if (loading) return <CurrentSkeleton />;
+  const cells: { label: string; value: React.ReactNode; sub?: string }[] = [
+    {
+      label: 'Open Positions',
+      value: (
+        <span className="num font-bold tabular-nums text-text">{current.openCount}</span>
+      ),
+    },
+    {
+      label: 'Open Exposure',
+      value: (
+        <span className="num font-bold tabular-nums text-text">{fmtUsd(current.exposure)}</span>
+      ),
+      sub: 'cost basis',
+    },
+    {
+      label: 'Unrealized PnL',
+      value:
+        current.openCount > 0 ? (
+          <PnlPill amount={current.unrealizedPnl} />
+        ) : (
+          <span className="text-text-dim">—</span>
+        ),
+    },
   ];
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       {cells.map((c, i) => (
         <div
           key={c.label}
@@ -123,9 +132,24 @@ function SummaryBar({ summary, loading }: { summary: Summary; loading: boolean }
           style={{ animationDelay: `${i * 40}ms` }}
         >
           <div className="label text-text-dim">{c.label}</div>
-          <div className="num mt-1 text-lg font-bold tabular-nums text-text">
-            {loading ? '…' : c.tone === 'pnl' ? <PnlPill amount={summary.totalPnl} /> : c.value}
-          </div>
+          <div className="mt-1 text-lg leading-tight">{c.value}</div>
+          {c.sub && <div className="mt-0.5 text-xs text-text-dim">{c.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CurrentSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-line bg-bg-elev px-4 py-3 animate-pulse"
+        >
+          <div className="h-3 w-20 rounded bg-bg-subtle" />
+          <div className="mt-2 h-5 w-24 rounded bg-bg-subtle" />
         </div>
       ))}
     </div>
@@ -137,12 +161,14 @@ function Section({
   count,
   loading,
   empty,
+  skeleton,
   children,
 }: {
   title: string;
   count: number;
   loading: boolean;
-  empty: string;
+  empty: React.ReactNode;
+  skeleton: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
@@ -150,17 +176,30 @@ function Section({
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">
           <h2 className="text-md font-semibold text-text">{title}</h2>
-          <span className="num text-sm text-text-dim">{count}</span>
+          <span className="num text-sm tabular-nums text-text-dim">
+            {loading ? '' : count}
+          </span>
         </div>
       </div>
-      {loading ? (
-        <div className="px-4 py-12 text-center text-sm text-text-dim">Loading…</div>
-      ) : count === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-text-dim">{empty}</div>
-      ) : (
-        children
-      )}
+      {loading ? skeleton : count === 0 ? empty : children}
     </section>
+  );
+}
+
+function EmptyPositions() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-4 py-14 text-center">
+      <p className="text-md font-medium text-text">No positions yet</p>
+      <p className="max-w-sm text-sm text-text-muted">
+        Place a bet and your open positions, exposure, and live P&amp;L will show up here.
+      </p>
+      <Link
+        href="/"
+        className="press-scale rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+      >
+        Browse markets
+      </Link>
+    </div>
   );
 }
 
@@ -181,111 +220,59 @@ function PositionsTable({ rows }: { rows: Position[] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
-          {rows.map((p) => (
-            <tr key={p.id} className="transition-colors hover:bg-surface-hover">
-              <Td>
-                <span className="font-medium text-text">{p.option.underlying}</span>
-                <span className="ml-2 text-text-dim">
-                  {p.option.strikes
-                    .map(
-                      (s) =>
-                        `$${Number(
-                          client.utils.fromStrikeDecimals(s)
-                        ).toLocaleString()}`
-                    )
-                    .join(' / ')}
-                </span>
-              </Td>
-              <Td>
-                <span
-                  className={
-                    p.side === 'buyer'
-                      ? 'font-semibold uppercase text-pump dark:text-pump-dark'
-                      : 'font-semibold uppercase text-dump dark:text-dump-dark'
-                  }
-                >
-                  {p.side === 'buyer' ? 'YES' : 'NO'}
-                </span>
-              </Td>
-              <Td align="right" mono>
-                {Number(
-                  client.utils.formatAmount(p.amount, 6, 4)
-                ).toLocaleString('en-US', { maximumFractionDigits: 4 })}
-              </Td>
-              <Td align="right" mono>
-                {fmtUsd(Number(client.utils.fromPriceDecimals(p.entryPrice)), {
-                  compact: true,
-                })}
-              </Td>
-              <Td align="right">
-                <PnlPill amount={Number(client.utils.fromUsdcDecimals(p.pnl))} />
-              </Td>
-              <Td align="right">
-                <TimerBadge expirySec={p.option.expiry} />
-              </Td>
-              <Td>
-                <span className="rounded-md bg-bg-subtle px-2 py-0.5 text-xs uppercase text-text-muted">
-                  {p.status}
-                </span>
-              </Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function HistoryTable({ rows }: { rows: TradeHistory[] }) {
-  const client = getReadClient();
-  const sorted = [...rows].sort((a, b) => b.timestamp - a.timestamp).slice(0, 20);
-  return (
-    <div className="scrollbar-thin overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="border-b border-line bg-bg-subtle text-left">
-          <tr className="label text-text-muted">
-            <Th>Time</Th>
-            <Th>Type</Th>
-            <Th>Asset</Th>
-            <Th align="right">Amount</Th>
-            <Th align="right">Price</Th>
-            <Th>Tx</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {sorted.map((h) => (
-            <tr key={`${h.id}-${h.txHash}`} className="transition-colors hover:bg-surface-hover">
-              <Td>
-                <span className="num text-text-muted">
-                  {new Date(h.timestamp * 1000).toLocaleString()}
-                </span>
-              </Td>
-              <Td>
-                <span className="uppercase text-text">{h.type}</span>
-              </Td>
-              <Td>{h.option.underlying}</Td>
-              <Td align="right" mono>
-                {Number(
-                  client.utils.formatAmount(h.amount, h.collateralDecimals || 6, 4)
-                ).toLocaleString('en-US', { maximumFractionDigits: 4 })}
-              </Td>
-              <Td align="right" mono>
-                {fmtUsd(Number(client.utils.fromPriceDecimals(h.price)), {
-                  compact: true,
-                })}
-              </Td>
-              <Td>
-                <a
-                  className="text-brand hover:underline"
-                  href={`https://basescan.org/tx/${h.txHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {shortAddress(h.txHash, 8, 6)}
-                </a>
-              </Td>
-            </tr>
-          ))}
+          {rows.map((p) => {
+            const pnl = pnlUsd(p);
+            const pct = pnlPct(p);
+            return (
+              <tr key={p.id} className="transition-colors hover:bg-surface-hover">
+                <Td>
+                  <span className="font-medium text-text">{p.option.underlying}</span>
+                  <span className="ml-2 text-text-dim">
+                    {p.option.strikes
+                      .map(
+                        (s) =>
+                          `$${Number(
+                            client.utils.fromStrikeDecimals(s)
+                          ).toLocaleString()}`
+                      )
+                      .join(' / ')}
+                  </span>
+                </Td>
+                <Td>
+                  <span
+                    className={
+                      p.side === 'buyer'
+                        ? 'font-semibold uppercase text-pump dark:text-pump-dark'
+                        : 'font-semibold uppercase text-dump dark:text-dump-dark'
+                    }
+                  >
+                    {p.side === 'buyer' ? 'YES' : 'NO'}
+                  </span>
+                </Td>
+                <Td align="right" mono>
+                  {Number(
+                    client.utils.formatAmount(p.amount, p.collateralDecimals || 6, 4)
+                  ).toLocaleString('en-US', { maximumFractionDigits: 4 })}
+                </Td>
+                <Td align="right" mono>
+                  {fmtUsd(Number(client.utils.fromPriceDecimals(p.entryPrice)), {
+                    compact: true,
+                  })}
+                </Td>
+                <Td align="right">
+                  <PnlPill amount={pnl} percent={pct} />
+                </Td>
+                <Td align="right">
+                  <TimerBadge expirySec={p.option.expiry} />
+                </Td>
+                <Td>
+                  <span className="rounded-md bg-bg-subtle px-2 py-0.5 text-xs uppercase text-text-muted">
+                    {p.status}
+                  </span>
+                </Td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

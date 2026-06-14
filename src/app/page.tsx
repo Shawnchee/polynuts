@@ -1,321 +1,300 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { TopNav } from '@/components/nav/TopNav';
-import { FilterStrip } from '@/components/markets/FilterStrip';
-import { MarketCard } from '@/components/markets/MarketCard';
-import { FeaturedHero } from '@/components/markets/FeaturedHero';
-import { Sidebar } from '@/components/markets/Sidebar';
-import { TradePanel } from '@/components/trade/TradePanel';
-import { NetworkGuard } from '@/components/nav/NetworkGuard';
-import { useMarkets } from '@/lib/sdk/useOrders';
-import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
-import { getReadClient } from '@/lib/sdk/clients';
-import {
-  useAppStore,
-  applyFilterSort,
-  buildExpiryGroups,
-} from '@/store/app';
-import { cn } from '@/lib/utils';
-import type { MarketView } from '@/lib/sdk/markets';
-import type { ExpiryFilter } from '@/store/app';
+import Link from 'next/link';
+import { ArrowRight, ArrowUpRight, ShieldCheck, Zap, Activity, Layers } from 'lucide-react';
+import { SpotlightCard } from '@/components/landing/SpotlightCard';
+import { LandingStats } from '@/components/landing/LandingStats';
+import { LiveMarkets } from '@/components/landing/LiveMarkets';
+import { SpotTicker } from '@/components/landing/SpotTicker';
 
-const PAGE_SIZE = 18;
-// Maximum markets the featured hero rotates through. Hidden when the
-// filtered set has fewer than FEATURED_MIN markets — below that the
-// hero slider has nothing meaningful to rotate. The previous threshold
-// (`length <= 5`) hid the hero on every narrow expiry tab, which the
-// user flagged as "Tomorrow has no featured section".
-const FEATURED_COUNT = 10;
-const FEATURED_MIN = 2;
+const ACCENT = '#60a5fa';
 
-export default function MarketsPage() {
-  const { markets, isLoading, error, refetch } = useMarkets();
-  const filter = useAppStore((s) => s.filter);
-  const sort = useAppStore((s) => s.sort);
-  const expiryFilter = useAppStore((s) => s.expiryFilter);
-  const setExpiryFilter = useAppStore((s) => s.setExpiryFilter);
-  const selectedId = useAppStore((s) => s.selectedMarketId);
-  const selectMarket = useAppStore((s) => s.selectMarket);
+const DIR_COLOR: Record<string, string> = {
+  PUMP: 'text-green-400',
+  DUMP: 'text-rose-400',
+  RANGE: 'text-violet-400',
+};
 
-  // Real expiry buckets, derived from the live order book.
-  const expiryGroups = useMemo(() => buildExpiryGroups(markets), [markets]);
+const STEPS = [
+  {
+    step: '01',
+    title: 'Pick a market',
+    body: 'Browse live BTC and ETH options expiring today, tomorrow, or next week. Every market resolves on-chain — no counterparty, no custody.',
+    accent: ACCENT,
+    spotlightColor: 'rgba(96,165,250,0.14)',
+  },
+  {
+    step: '02',
+    title: 'Choose your direction',
+    body: 'PUMP if you think price finishes above the strike. DUMP if below. RANGE if it stays inside the band. Your max loss is always your bet.',
+    accent: '#22c55e',
+    spotlightColor: 'rgba(34,197,94,0.12)',
+    chips: ['PUMP', 'DUMP', 'RANGE'],
+  },
+  {
+    step: '03',
+    title: 'Win or lose — instantly',
+    body: 'When the market settles, the on-chain oracle records the price. Winners collect their USDC payout automatically — no claim needed.',
+    accent: '#facc15',
+    spotlightColor: 'rgba(250,204,21,0.10)',
+  },
+];
 
-  // Auto-reset to 'all' if the user's selected expiry bucket has expired
-  // out of the order book (e.g. the only intraday market they had filtered
-  // to just settled).
-  useEffect(() => {
-    if (expiryFilter === 'all') return;
-    const stillExists = expiryGroups.some((g) => g.ts === expiryFilter);
-    if (!stillExists) setExpiryFilter('all');
-  }, [expiryGroups, expiryFilter, setExpiryFilter]);
+const FEATURES = [
+  {
+    icon: ShieldCheck,
+    kicker: 'Custody',
+    title: 'Non-custodial',
+    body: 'Your USDC, your keys. Smart contracts handle every fill and settlement — no withdrawal requests, no KYC.',
+    tint: 'rgba(34,197,94,0.12)',
+  },
+  {
+    icon: Zap,
+    kicker: 'Speed',
+    title: 'Sub-second fills',
+    body: 'Bets execute on Base in ~2s. Gas is pinned to 80k so your wallet popup appears immediately, even on slow RPCs.',
+    tint: 'rgba(250,204,21,0.12)',
+  },
+  {
+    icon: Activity,
+    kicker: 'Pricing',
+    title: 'Real-time odds',
+    body: 'Implied probability and max multiplier are computed on-chain via simulatePayout — not a marketing estimate.',
+    tint: 'rgba(96,165,250,0.12)',
+  },
+  {
+    icon: Layers,
+    kicker: 'Infrastructure',
+    title: 'Powered by Thetanuts V4',
+    body: 'Polynuts is a front-end for Thetanuts Finance V4 structured-product vaults — audited, live since 2021.',
+    tint: 'rgba(167,139,250,0.12)',
+  },
+];
 
-  const binaries = useMarketBinaryFramings(markets);
-  const multiplierByMarket = useMemo(() => {
-    const m = new Map<string, number>();
-    markets.forEach((mkt, i) => {
-      const v = binaries[i]?.data?.multiplier;
-      if (typeof v === 'number') m.set(mkt.id, v);
-    });
-    return m;
-  }, [markets, binaries]);
 
-  const filtered = useMemo(
-    () =>
-      applyFilterSort(
-        markets,
-        filter,
-        sort,
-        (m) => multiplierByMarket.get(m.id) ?? null,
-        expiryFilter
-      ),
-    [markets, filter, sort, multiplierByMarket, expiryFilter]
-  );
-
-  // Top-N featured strip — ranked by available volume × multiplier so we
-  // surface markets with both real liquidity and meaningful upside.
-  // Hidden when there's <= FEATURED_COUNT total or no multipliers loaded.
-  // Volume + multiplier both flow from SDK paths
-  // (client.utils.fromUsdcDecimals + client.option.simulatePayout); the
-  // composite score formula is product-taxonomy, not a payout calculation.
-  const client = getReadClient();
-  const featured = useMemo(() => {
-    if (filtered.length < FEATURED_MIN) return [];
-    const ranked = [...filtered]
-      .map((m) => {
-        const vol = Number(client.utils.fromUsdcDecimals(m.availableUsdc));
-        const mult = multiplierByMarket.get(m.id) ?? 0;
-        return { m, score: vol * Math.max(1, Math.min(10, mult)) };
-      })
-      .sort((a, b) => b.score - a.score);
-    return ranked.slice(0, FEATURED_COUNT).map((r) => r.m);
-  }, [filtered, multiplierByMarket, client]);
-
-  const featuredIds = useMemo(
-    () => new Set(featured.map((m) => m.id)),
-    [featured]
-  );
-  const rest = useMemo(
-    () => filtered.filter((m) => !featuredIds.has(m.id)),
-    [filtered, featuredIds]
-  );
-
-  // Pagination on the rest. Reset to page 1 whenever the filter scope
-  // changes so the user always lands on a populated page.
-  const [page, setPage] = useState(1);
-  useEffect(() => {
-    setPage(1);
-  }, [filter, sort, expiryFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(rest.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageStart = (safePage - 1) * PAGE_SIZE;
-  const pageRows = rest.slice(pageStart, pageStart + PAGE_SIZE);
-
-  const selectedMarket =
-    filtered.find((m) => m.id === selectedId) ??
-    markets.find((m) => m.id === selectedId) ??
-    null;
-
+export default function LandingPage() {
   return (
-    <div className="min-h-dvh">
-      <TopNav active="/" />
-      <NetworkGuard />
-      <FilterStrip count={filtered.length} expiryGroups={expiryGroups} />
+    <div className="relative min-h-screen overflow-x-hidden bg-[#131720] text-white antialiased">
 
-      <main className="mx-auto max-w-page px-6 py-6">
-        <div className="flex flex-col gap-6 lg:flex-row">
-          <section className="min-w-0 flex-1 space-y-6">
-            {isLoading && <SkeletonGrid />}
-            {error != null && (
-              <ErrorState
-                msg="Couldn't load markets — Odette API is unreachable or rate-limited."
-                onRetry={() => refetch()}
-              />
-            )}
-            {!isLoading && !error && filtered.length === 0 && (
-              <ExpiryEmptyState
-                hasMarkets={markets.length > 0}
-                onResetExpiry={() => setExpiryFilter('all')}
-                expiryFilter={expiryFilter}
-              />
-            )}
+      {/* ── Top nav ── */}
+      <header className="fixed top-0 z-50 w-full border-b border-white/[0.06] bg-[#131720]/70 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
+          <Link href="/" className="font-display text-lg font-extrabold tracking-tight">
+            <span style={{ color: ACCENT }}>poly</span>
+            <span className="text-white">nuts</span>
+          </Link>
+          <div className="flex items-center gap-3">
+            <span className="hidden items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.02] px-3 py-1.5 font-mono text-[11px] text-white/50 sm:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+              BASE · LIVE
+            </span>
+            <Link
+              href="/markets"
+              className="press-scale flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#131720] transition-colors hover:bg-white/90"
+            >
+              Launch app <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      </header>
 
-            {!isLoading && featured.length > 0 && (
-              <FeaturedHero
-                markets={featured}
-                selectedId={selectedId}
-                onSelect={selectMarket}
-                multiplierByMarket={multiplierByMarket}
-              />
-            )}
+      {/* ── Hero ── */}
+      <section className="relative flex min-h-[100svh] flex-col items-center justify-center overflow-hidden px-6 pt-24 text-center">
+        {/* Flat blueprint grid — replaces the WebGL aurora. No glow. */}
+        <div className="pointer-events-none absolute inset-0 grid-bg" />
 
-            {!isLoading && pageRows.length > 0 && (
-              <>
-                {featured.length > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="label text-text-muted">All markets</span>
-                    <span className="num text-xs text-text-dim">
-                      {rest.length} total
-                    </span>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                  {pageRows.map((m, i) => (
-                    <div
-                      key={m.id}
-                      className={cn(
-                        'animate-fade-in',
-                        i < 8 && `stagger-${(i % 8) + 1}`
-                      )}
-                    >
-                      <MarketCard
-                        market={m}
-                        selected={selectedId === m.id}
-                        onSelect={selectMarket}
-                      />
-                    </div>
-                  ))}
-                </div>
-                {totalPages > 1 && (
-                  <Pager
-                    page={safePage}
-                    totalPages={totalPages}
-                    onPage={setPage}
-                  />
-                )}
-              </>
-            )}
-          </section>
-
-          <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[320px]">
-            <div className="lg:sticky lg:top-20">
-              <TradePanel market={selectedMarket} />
+        <div className="relative z-10 flex w-full max-w-3xl flex-col items-center gap-7">
+          <div className="flex flex-col items-center gap-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-white/55">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
+              Live on Base mainnet
             </div>
-            <div className="hidden lg:block">
-              <Sidebar />
+            <SpotTicker />
+          </div>
+
+          <h1 className="font-display text-[clamp(2.75rem,8vw,5.25rem)] font-extrabold leading-[0.98] tracking-[-0.03em]">
+            Trade the moment.
+            <span className="mt-1 block" style={{ color: ACCENT }}>
+              On-chain.
+            </span>
+          </h1>
+
+          <p className="max-w-xl text-base leading-relaxed text-white/55 sm:text-lg">
+            Bet whether BTC or ETH will pump, dump, or range — in the next hour, day,
+            or week. Fixed risk. Instant settlement. No custody.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+            <Link
+              href="/markets"
+              className="group press-scale flex items-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-[#131720] transition-all hover:brightness-110"
+              style={{ background: ACCENT }}
+            >
+              Start trading
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+            <a
+              href="#how"
+              className="rounded-full border border-white/10 bg-white/[0.03] px-7 py-3.5 text-base font-medium text-white/75 transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+            >
+              How it works
+            </a>
+          </div>
+
+          {/* Direction legend — mono, restrained */}
+          <div className="flex items-center gap-4 pt-2 font-mono text-xs text-white/40">
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-400" /> PUMP
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-400" /> DUMP
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-violet-400" /> RANGE
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Stats strip (real protocol numbers) ── */}
+      <LandingStats />
+
+      {/* ── Live markets table (real order book) ── */}
+      <LiveMarkets />
+
+      {/* ── How it works ── */}
+      <section id="how" className="relative scroll-mt-24 px-6 py-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-14 text-center">
+            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
+              How it works
+            </p>
+            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
+              Three steps to your first bet
+            </h2>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-3">
+            {STEPS.map((s) => (
+              <SpotlightCard
+                key={s.step}
+                spotlightColor={s.spotlightColor}
+                className="flex flex-col gap-5 p-7"
+              >
+                {/* Top accent hairline */}
+                <div
+                  className="absolute inset-x-0 top-0 h-px"
+                  style={{ background: `linear-gradient(to right, transparent, ${s.accent}66, transparent)` }}
+                />
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-sm font-medium text-white/30">{s.step}</span>
+                  {s.chips && (
+                    <div className="flex gap-1.5 font-mono text-[10px] font-semibold">
+                      {s.chips.map((c) => (
+                        <span key={c} className={DIR_COLOR[c]}>
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h3 className="mb-2 font-display text-lg font-bold text-white">{s.title}</h3>
+                  <p className="text-sm leading-relaxed text-white/50">{s.body}</p>
+                </div>
+              </SpotlightCard>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Features ── */}
+      <section className="relative px-6 py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-14 text-center">
+            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
+              Why Polynuts
+            </p>
+            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
+              Real options under the hood
+            </h2>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {FEATURES.map((f) => (
+              <SpotlightCard
+                key={f.title}
+                spotlightColor={f.tint}
+                className="flex flex-col gap-4 p-6"
+              >
+                <div
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10"
+                  style={{ background: f.tint }}
+                >
+                  <f.icon className="h-5 w-5 text-white/80" strokeWidth={1.75} />
+                </div>
+                <div>
+                  <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/30">
+                    {f.kicker}
+                  </p>
+                  <h3 className="mb-1.5 font-display text-base font-bold text-white">{f.title}</h3>
+                  <p className="text-sm leading-relaxed text-white/45">{f.body}</p>
+                </div>
+              </SpotlightCard>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Final CTA ── */}
+      <section className="relative px-6 py-28">
+        <div className="mx-auto max-w-4xl">
+          <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] px-8 py-16 text-center">
+            <div className="pointer-events-none absolute inset-0 grid-bg opacity-70" />
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-px"
+              style={{ background: `linear-gradient(to right, transparent, ${ACCENT}99, transparent)` }}
+            />
+            <div className="relative">
+              <h2 className="mx-auto max-w-xl font-display text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
+                Ready to trade?
+              </h2>
+              <p className="mx-auto mb-9 mt-4 max-w-md font-mono text-sm text-white/45">
+                243 live markets · real money · on-chain settlement
+              </p>
+              <Link
+                href="/markets"
+                className="group press-scale inline-flex items-center gap-2.5 rounded-full px-8 py-4 text-base font-semibold text-[#131720] transition-all hover:brightness-110"
+                style={{ background: ACCENT }}
+              >
+                Open the app
+                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5" />
+              </Link>
             </div>
           </div>
         </div>
-      </main>
-    </div>
-  );
-}
+      </section>
 
-function Pager({
-  page,
-  totalPages,
-  onPage,
-}: {
-  page: number;
-  totalPages: number;
-  onPage: (n: number) => void;
-}) {
-  return (
-    <div className="flex items-center justify-center gap-2 pt-2">
-      <button
-        onClick={() => onPage(Math.max(1, page - 1))}
-        disabled={page <= 1}
-        aria-label="Previous page"
-        className={cn(
-          'press-scale inline-flex h-9 items-center gap-1 rounded-md border border-line bg-bg-elev px-3 text-sm text-text transition-colors',
-          'hover:bg-surface-hover',
-          page <= 1 && 'cursor-not-allowed opacity-50'
-        )}
-      >
-        <ChevronLeft className="h-4 w-4" />
-        Prev
-      </button>
-      <span className="num text-sm tabular-nums text-text-muted">
-        Page <span className="font-semibold text-text">{page}</span> of{' '}
-        <span className="font-semibold text-text">{totalPages}</span>
-      </span>
-      <button
-        onClick={() => onPage(Math.min(totalPages, page + 1))}
-        disabled={page >= totalPages}
-        aria-label="Next page"
-        className={cn(
-          'press-scale inline-flex h-9 items-center gap-1 rounded-md border border-line bg-bg-elev px-3 text-sm text-text transition-colors',
-          'hover:bg-surface-hover',
-          page >= totalPages && 'cursor-not-allowed opacity-50'
-        )}
-      >
-        Next
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
-
-function SkeletonGrid() {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div
-          key={i}
-          className={cn(
-            'relative h-44 overflow-hidden rounded-xl border border-line bg-bg-elev'
-          )}
-        >
-          <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-surface-hover to-transparent" />
+      {/* ── Footer ── */}
+      <footer className="border-t border-white/[0.06] px-6 py-10">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 text-xs text-white/30">
+          <span className="font-mono">
+            <span style={{ color: ACCENT }}>poly</span>nuts — powered by Thetanuts V4
+          </span>
+          <div className="flex gap-6 font-mono">
+            <Link href="/markets" className="transition-colors hover:text-white/70">Markets</Link>
+            <Link href="/leaderboard" className="transition-colors hover:text-white/70">Leaderboard</Link>
+            <a
+              href="https://thetanuts.finance"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-0.5 transition-colors hover:text-white/70"
+            >
+              Thetanuts <ArrowUpRight className="h-3 w-3" />
+            </a>
+          </div>
         </div>
-      ))}
-    </div>
-  );
-}
-
-function ExpiryEmptyState({
-  hasMarkets,
-  onResetExpiry,
-  expiryFilter,
-}: {
-  hasMarkets: boolean;
-  onResetExpiry: () => void;
-  expiryFilter: ExpiryFilter;
-}) {
-  if (!hasMarkets) {
-    return (
-      <div className="flex h-64 animate-fade-in flex-col items-center justify-center rounded-xl border border-dashed border-line bg-bg-elev">
-        <p className="text-md font-medium text-text">No live markets right now</p>
-        <p className="mt-1 text-sm text-text-muted">
-          New markets show up as makers post orders. Refreshes every 30 seconds.
-        </p>
-      </div>
-    );
-  }
-
-  // Has markets but the user's direction × expiry combo is empty.
-  return (
-    <div className="flex h-64 animate-fade-in flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line bg-bg-elev px-6 text-center">
-      <p className="text-md font-medium text-text">
-        No markets match your filters
-      </p>
-      <p className="text-sm text-text-muted">
-        Try a different direction or expiry.
-      </p>
-      {expiryFilter !== 'all' && (
-        <button
-          onClick={onResetExpiry}
-          className="press-scale mt-2 inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark transition-colors"
-        >
-          Show all expiries
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ErrorState({ msg, onRetry }: { msg: string; onRetry: () => void }) {
-  return (
-    <div className="flex h-64 animate-fade-in flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-dump/40 bg-dump/5">
-      <p className="text-md font-medium text-dump dark:text-dump-dark">{msg}</p>
-      <button
-        onClick={onRetry}
-        className="press-scale rounded-md bg-dump px-4 py-2 text-sm font-semibold text-white hover:bg-dump/90 transition-colors"
-      >
-        Retry
-      </button>
+      </footer>
     </div>
   );
 }

@@ -13,9 +13,10 @@ export function ThemeToggle() {
       onClick={toggle}
       aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
       className={cn(
-        'press-scale relative flex h-9 w-9 items-center justify-center rounded-full',
+        'press-scale relative flex h-11 w-11 cursor-pointer items-center justify-center rounded-full sm:h-9 sm:w-9',
         'border border-line bg-surface text-text transition-colors duration-180',
-        'hover:bg-surface-hover'
+        'hover:bg-surface-hover',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg'
       )}
     >
       <Sun

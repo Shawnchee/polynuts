@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { ethers } from 'ethers';
 import {
   isThetanutsError,
+  OPTION_BOOK_ABI,
   OrderExpiredError,
   InsufficientAllowanceError,
   InsufficientBalanceError,
@@ -27,13 +28,16 @@ import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { useUsdcAllowance, MAX_UINT256 } from '@/lib/sdk/useUsdcAllowance';
 import { DirectionTag } from '@/components/ui/DirectionTag';
-import { ShareWinCard } from '@/components/share/ShareWinCard';
 import { PayoutChart } from '@/components/trade/PayoutChart';
 import { TradingViewChart } from '@/components/trade/TradingViewChart';
+import {
+  ConfirmTradeModal,
+  type PendingTrade,
+} from '@/components/trade/ConfirmTradeModal';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Loader2 } from 'lucide-react';
 
 type ChartTab = 'payout' | 'spot';
 
@@ -41,7 +45,7 @@ type ChartTab = 'payout' | 'spot';
 // accepts any value as the user types and validates >= MIN_BET only
 // at submit, so partial input ("1.", "0.") doesn't get clobbered.
 const SIZES = [1, 5, 10, 25, 100] as const;
-const MIN_BET = 1;
+const MIN_BET = 0.5;
 
 interface PreviewState {
   numContracts: bigint;
@@ -54,7 +58,13 @@ interface PreviewState {
   capped: boolean;
 }
 
-export function TradePanel({ market }: { market: MarketView | null }) {
+export function TradePanel({
+  market,
+  isLoading = false,
+}: {
+  market: MarketView | null;
+  isLoading?: boolean;
+}) {
   // Default bet size $1 — small enough that anyone can test the full
   // approve + fill flow without committing real money.
   // Track the input as a string so partial values ("1.", "10.5") don't
@@ -65,13 +75,16 @@ export function TradePanel({ market }: { market: MarketView | null }) {
     const n = Number(amountInput);
     return Number.isFinite(n) && n > 0 ? n : 0;
   }, [amountInput]);
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
   const { signerClient, signer, ready, notReadyReason } = useSignerClient();
   const { data: balance } = useUsdcBalance();
   const prependActivity = useAppStore((s) => s.prependActivity);
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
+  // Staged trade waiting for explicit user confirm via the 10s modal.
+  // Set by handleBet, cleared by the modal's cancel or after fill.
+  const [pendingTrade, setPendingTrade] = useState<PendingTrade | null>(null);
 
   // Check the current USDC allowance against the order's OptionBook spender.
   // When allowance < bet, we surface a separate "Approve USDC" button so
@@ -157,7 +170,6 @@ export function TradePanel({ market }: { market: MarketView | null }) {
     }
     setApproving(true);
     const t = toast.loading('Sign the approval in your wallet…');
-    // eslint-disable-next-line no-console
     console.info('[polynuts] approve start', {
       usdc: signerClient.chainConfig.tokens.USDC.address,
       spender: orderOptionBook,
@@ -190,7 +202,6 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         gasLimit: 80_000n,
       });
       const receipt = await tx.wait();
-      // eslint-disable-next-line no-console
       console.info('[polynuts] approve mined', { txHash: receipt?.hash });
       // Bust the allowance cache so the bet button activates immediately.
       await queryClient.invalidateQueries({ queryKey: ['usdc-allowance'] });
@@ -220,7 +231,6 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         // Not an error — the user explicitly clicked Reject in their
         // wallet. Don't shout in the console; show a friendly toast
         // explaining they're free to try again.
-        // eslint-disable-next-line no-console
         console.info('[polynuts] approve cancelled by user');
         toast.info(
           'You rejected the approval. Click "Approve USDC" again to retry.',
@@ -229,7 +239,6 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         return;
       }
       // Real error — log + toast.
-      // eslint-disable-next-line no-console
       console.error('[polynuts] approve error', err);
       let msg = 'Approval failed';
       if (/insufficient funds/i.test(msgText)) msg = 'Insufficient ETH for gas';
@@ -241,14 +250,17 @@ export function TradePanel({ market }: { market: MarketView | null }) {
   }
 
   if (!market) {
+    if (isLoading) {
+      return <TradePanelSkeleton />;
+    }
     return (
-      <div className="rounded-xl border border-line bg-bg-elev p-6 animate-fade-in">
+      <div className="rounded-xl border border-line bg-bg-elev p-4 animate-fade-in">
         <p className="text-sm text-text-dim">Select a market to place a bet.</p>
       </div>
     );
   }
 
-  async function handleBet() {
+  function handleBet() {
     if (!market) return;
     if (!ready || !signerClient) {
       // Surface the actual blocker rather than a generic "connect wallet"
@@ -265,76 +277,139 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       return;
     }
     if (amount < MIN_BET) {
-      toast.error(`Minimum bet is $${MIN_BET} USDC`);
+      toast.error(`Minimum bet is $${MIN_BET.toFixed(2)} USDC`);
       return;
     }
+    if (!preview) {
+      toast.error('Still computing your fill — try again in a moment');
+      return;
+    }
+    // Pre-fill expiry guard — fail fast before opening the confirm modal
+    // so the user isn't asked to confirm a trade we already know will
+    // revert. The SDK throws inside fillOrder otherwise, after the user
+    // has signed.
+    try {
+      validateOrderExpiry(Number(market.order.order.expiry));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Order expired';
+      toast.error(msg);
+      return;
+    }
+    // Resolve the OptionBook spender ONCE at stage time so both the
+    // approval (already happened or coming via ensureAllowance) and the
+    // fillOrder hit the same address. Odette can pin an order to a
+    // non-default OptionBook via rawApiData.optionBookAddress.
+    const spender =
+      market.order.rawApiData?.optionBookAddress ??
+      signerClient.chainConfig.contracts.optionBook;
+    if (!spender) {
+      toast.error('OptionBook not deployed on this chain');
+      return;
+    }
+    setPendingTrade({
+      market,
+      amount,
+      numContracts: preview.numContracts,
+      totalCollateral: preview.totalCollateral,
+      maxPayoutAtFill: payoutAtFill ?? null,
+      optionBookSpender: spender,
+    });
+  }
+
+  async function confirmAndFillBet(slippageWarning: string | null) {
+    const trade = pendingTrade;
+    setPendingTrade(null);
+    if (!trade) return;
+    if (!ready || !signerClient) {
+      toast.error('Wallet not ready');
+      return;
+    }
+    if (slippageWarning) toast.info(slippageWarning, { duration: 5000 });
+
     setSubmitting(true);
     const t = toast.loading('Placing your bet…');
-    // eslint-disable-next-line no-console
-    console.info('[polynuts] handleBet start', {
-      market: market.id,
-      amount,
-      direction: market.direction,
+    console.info('[polynuts] confirmAndFillBet start', {
+      market: trade.market.id,
+      amount: trade.amount,
+      direction: trade.market.direction,
     });
     try {
-      // Pre-fill expiry guard — fails fast before sending the user through
-      // wallet approval if the order has already expired (SDK throws inside
-      // fillOrder otherwise, after the user has signed).
-      validateOrderExpiry(Number(market.order.order.expiry));
-
-      const usdcAmount = toBigInt(String(amount), 6);
+      const usdcAmount = toBigInt(String(trade.amount), 6);
       const usdcAddr = signerClient.chainConfig.tokens.USDC.address;
-      // Approve and fill against the SAME OptionBook instance the order was
-      // signed for. Odette's order can be tied to a non-default OptionBook
-      // via `rawApiData.optionBookAddress` — the SDK's fillOrder uses that
-      // override (optionBook.ts:417), so the approval must target it too.
-      const orderOptionBook =
-        market.order.rawApiData?.optionBookAddress ??
-        signerClient.chainConfig.contracts.optionBook;
-      if (!orderOptionBook) throw new Error('OptionBook not deployed on this chain');
+      // Snapshot the spender from PendingTrade — resolved once at stage
+      // time so the approval and fill always target the same OptionBook,
+      // even if rawApiData mutates between the modal opening and confirm.
+      const orderOptionBook = trade.optionBookSpender;
 
       // ensureAllowance is idempotent — returns null when the existing
       // allowance already covers usdcAmount, so users who pre-approved
       // via the explicit "Approve USDC" button don't see a second wallet
-      // popup here. Only fires an approval if the user clicked Bet
-      // without pre-approving (and the bet is below their balance).
-      // eslint-disable-next-line no-console
+      // popup here.
       console.info('[polynuts] ensureAllowance', { usdcAddr, orderOptionBook, usdcAmount });
       const approveReceipt = await signerClient.erc20.ensureAllowance(
         usdcAddr,
         orderOptionBook,
         usdcAmount
       );
-      // eslint-disable-next-line no-console
       console.info('[polynuts] approval done', { txHash: approveReceipt?.hash ?? 'already-approved' });
-      // eslint-disable-next-line no-console
       console.info('[polynuts] fillOrder start');
-      const receipt = await signerClient.optionBook.fillOrder(market.order, usdcAmount);
-      // eslint-disable-next-line no-console
+      const receipt = await signerClient.optionBook.fillOrder(
+        trade.market.order,
+        usdcAmount
+      );
       console.info('[polynuts] fillOrder done', { txHash: receipt?.hash });
 
+      // Write this trade to Supabase immediately so it appears in the
+      // activity/leaderboard without waiting for an indexer sync.
+      // Fire-and-forget — never block the success UX on this.
+      if (receipt?.hash && address) {
+        try {
+          // Parse the OrderFilled event from the receipt to get the deployed
+          // option contract address (not available in the order's rawApiData).
+          const iface = new ethers.Interface(OPTION_BOOK_ABI as ethers.InterfaceAbi);
+          let optionId: string | null = null;
+          for (const log of receipt.logs ?? []) {
+            try {
+              const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+              if (parsed?.name === 'OrderFilled') {
+                // OrderFilled args: (nonce, buyer, seller, optionAddress, ...)
+                optionId = parsed.args[3] as string;
+                break;
+              }
+            } catch { /* skip non-matching logs */ }
+          }
+
+          if (optionId) {
+            const label = `${trade.market.asset} ${trade.market.strikes
+              .map((s) => `$${s.toLocaleString('en-US', { maximumFractionDigits: 0 })}`)
+              .join(' / ')}`;
+            const payload = {
+              tx_hash: receipt.hash,
+              option_id: optionId.toLowerCase(),
+              taker_address: address.toLowerCase(),
+              market_label: label,
+              side: trade.market.direction,
+              contracts: Number(fromBigInt(trade.numContracts, 6)),
+              notional_usdc: trade.amount,
+              entry_price: Number(fromBigInt(trade.market.pricePerContract, 8)),
+              created_at: new Date().toISOString(),
+            };
+            fetch('/api/me/trades', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            }).catch((err) => {
+              console.warn('[polynuts] write-on-fill failed (non-critical)', err);
+            });
+          }
+        } catch (err) {
+          console.warn('[polynuts] receipt parse failed (non-critical)', err);
+        }
+      }
+
       const explorer = signerClient.chainConfig.explorerUrl;
-      // ethers v6 TransactionReceipt → .hash (no v5 .transactionHash fallback needed)
       const txHash = receipt?.hash;
       const url = txHash ? `${explorer}/tx/${txHash}` : explorer;
-
-      // Build the share-card args from SDK-derived numbers only.
-      // payoutAtFill comes from useFillPayout (client.option.simulatePayout)
-      // — the max payout in 6-dec USDC for the actual numContracts being
-      // bought. If it isn't loaded yet, or this is a vanilla option (open-
-      // ended payoff has no max), we don't show a brag prompt rather than
-      // recompute payout client-side.
-      const shareArgs =
-        market && payoutAtFill != null
-          ? {
-              result: 'pending' as const,
-              bet: amount,
-              payout: Number(readClient.utils.fromUsdcDecimals(payoutAtFill)),
-              direction: market.direction,
-              question: market.question,
-              asset: market.asset,
-            }
-          : null;
 
       toast.success(
         <div className="flex flex-col gap-2">
@@ -349,31 +424,36 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               View on Basescan
             </a>
           </span>
-          {shareArgs && shareArgs.payout > shareArgs.bet && (
-            <div className="flex items-center gap-2 pt-1">
-              <span className="text-xs text-text-muted">Brag a little —</span>
-              <ShareWinCard args={shareArgs} size="sm" />
-            </div>
-          )}
         </div>,
         { id: t, duration: 12_000 }
       );
 
       prependActivity({
-        id: `${market.id}-${Date.now()}`,
+        id: `${trade.market.id}-${Date.now()}`,
         ts: Date.now(),
         kind: 'filled',
-        asset: market.asset,
-        direction: market.direction,
-        question: `${market.direction} · $${amount} · ${market.asset}`,
+        asset: trade.market.asset,
+        direction: trade.market.direction,
+        question: `${trade.market.direction} · $${trade.amount} · ${trade.market.asset}`,
       });
+
+      // Invalidate the portfolio/history caches so /portfolio reflects the
+      // fresh position immediately. Without this the user sees stale data
+      // for up to refetchInterval (30s positions / 60s history). Indexer
+      // ingestion is usually <1s after the tx mines on Base.
+      const key = address?.toLowerCase();
+      if (key) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['positions', key] }),
+          queryClient.invalidateQueries({ queryKey: ['tradeHistory', key] }),
+        ]);
+      }
     } catch (err: unknown) {
       const msgText = err instanceof Error ? err.message : '';
       const wasRejection =
         /user rejected|user denied|action_rejected/i.test(msgText) ||
         (err as { code?: number }).code === 4001;
       if (wasRejection) {
-        // eslint-disable-next-line no-console
         console.info('[polynuts] bet cancelled by user');
         toast.info('You rejected the bet. Click again to retry.', {
           id: t,
@@ -381,9 +461,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
         });
         return;
       }
-      // eslint-disable-next-line no-console
-      console.error('[polynuts] handleBet error', err);
-      // Map every typed SDK error class to a friendly message. PRD §8.
+      console.error('[polynuts] confirmAndFillBet error', err);
       let msg = 'Transaction failed';
       if (err instanceof OrderExpiredError) msg = 'Market closed — pick a fresh one';
       else if (err instanceof InsufficientAllowanceError) msg = 'Approval needed — try again';
@@ -418,6 +496,10 @@ export function TradePanel({ market }: { market: MarketView | null }) {
       )}`
     : null;
   const isVanilla = market.family === 'vanilla';
+  // Show a pulse while we have a valid bet but the SDK payout call is
+  // still in flight. Avoids the brief "$—" flash that looks like an error.
+  const payoutLoading =
+    !isVanilla && !payoutUsdcStr && amount >= MIN_BET && !!preview;
 
   return (
     <div className="rounded-xl border border-line bg-bg-elev p-4 animate-fade-in">
@@ -436,7 +518,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               key={s}
               onClick={() => setAmountInput(String(s))}
               className={cn(
-                'press-scale rounded-md border px-1 py-2 text-sm font-medium tabular-nums num transition-colors duration-120',
+                'press-scale min-h-[44px] rounded-md border px-1 py-2 text-sm font-medium tabular-nums num transition-colors duration-120 sm:min-h-0',
                 amount === s
                   ? 'border-text bg-text text-bg-elev'
                   : 'border-line text-text hover:border-text-dim hover:bg-surface-hover'
@@ -454,7 +536,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
             // at submit time against MIN_BET.
             type="text"
             inputMode="decimal"
-            placeholder={`min $${MIN_BET}`}
+            placeholder={`min $${MIN_BET.toFixed(2)}`}
             value={amountInput}
             onChange={(e) => {
               // Permit only digits + a single dot — strip everything else
@@ -463,12 +545,12 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               if (dotCount > 1) return;
               setAmountInput(cleaned);
             }}
-            className="w-full rounded-md border border-line bg-surface px-2 py-1.5 num text-sm tabular-nums text-text focus:border-brand"
+            className="min-h-[44px] w-full rounded-md border border-line bg-surface px-2 py-1.5 num text-sm tabular-nums text-text focus:border-brand sm:min-h-0"
           />
         </div>
         {amountInput !== '' && amount > 0 && amount < MIN_BET && (
           <p className="mt-1 text-xs text-dump dark:text-dump-dark">
-            Minimum bet is ${MIN_BET} USDC
+            Minimum bet is ${MIN_BET.toFixed(2)} USDC
           </p>
         )}
       </div>
@@ -487,20 +569,35 @@ export function TradePanel({ market }: { market: MarketView | null }) {
             )}
           >
             <div className="label text-text-dim">If correct, you win</div>
-            <div
-              className={cn(
-                'num mt-1 text-2xl font-bold tabular-nums tracking-tight',
-                payoutUsdcStr ? 'text-pump dark:text-pump-dark' : 'text-text-dim'
-              )}
-            >
-              {payoutUsdcStr ?? '$—'}
-            </div>
-            {binary?.multiplier && (
-              <div className="num mt-1 text-xs font-semibold tabular-nums text-text-muted">
-                {binary.multiplier.toFixed(2)}x return ·{' '}
-                {Math.round(binary.yesProbability * 100)}% implied probability
+            {payoutLoading ? (
+              <div
+                aria-label="Calculating payout"
+                className="mx-auto mt-1.5 h-7 w-32 animate-pulse rounded bg-surface-hover"
+              />
+            ) : (
+              <div
+                className={cn(
+                  'num mt-1 text-2xl font-bold tabular-nums tracking-tight',
+                  payoutUsdcStr ? 'text-pump dark:text-pump-dark' : 'text-text-dim'
+                )}
+              >
+                {payoutUsdcStr ?? '$—'}
               </div>
             )}
+            {binary?.multiplier && Number.isFinite(binary.multiplier) ? (
+              <div className="num mt-1 text-xs font-semibold tabular-nums text-text-muted">
+                {binary.multiplier.toFixed(2)}x return ·{' '}
+                {Number.isFinite(binary.yesProbability)
+                  ? Math.round(binary.yesProbability * 100)
+                  : '—'}
+                % implied probability
+              </div>
+            ) : payoutLoading ? (
+              <div
+                aria-hidden
+                className="mx-auto mt-1.5 h-3 w-44 animate-pulse rounded bg-surface-hover"
+              />
+            ) : null}
           </div>
         ) : (
           <div className="rounded-lg border border-line bg-bg-subtle p-4 text-center">
@@ -525,7 +622,10 @@ export function TradePanel({ market }: { market: MarketView | null }) {
           <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
         </summary>
         <div className="space-y-1.5 border-t border-line px-3 py-2">
-          <SummaryRow label="You bet" value={`$${amount} USDC`} />
+          <SummaryRow
+            label="You bet"
+            value={amount > 0 ? `$${amount.toFixed(2)} USDC` : '—'}
+          />
           <SummaryRow
             label="Contracts"
             value={
@@ -535,6 +635,10 @@ export function TradePanel({ market }: { market: MarketView | null }) {
                   ).toLocaleString('en-US', { maximumFractionDigits: 4 })
                 : '—'
             }
+          />
+          <SummaryRow
+            label="Max loss"
+            value={amount > 0 ? `$${amount.toFixed(2)} USDC` : '—'}
           />
           <SummaryRow label="Structure" value={market.structureName} mono={false} />
           <SummaryRow
@@ -581,8 +685,7 @@ export function TradePanel({ market }: { market: MarketView | null }) {
             {({ openChainModal }) => (
               <button
                 onClick={openChainModal}
-                className="press-scale w-full rounded-md bg-warning py-3 text-base font-semibold text-white transition-colors hover:opacity-90"
-                style={{ background: '#D97706' }}
+                className="press-scale w-full rounded-md bg-warning py-3 text-base font-semibold text-white transition-colors hover:bg-warning/90"
               >
                 Switch to Base to Bet
               </button>
@@ -595,11 +698,15 @@ export function TradePanel({ market }: { market: MarketView | null }) {
           <button
             onClick={handleApprove}
             disabled={approving}
+            aria-busy={approving}
             className={cn(
-              'press-scale w-full rounded-md bg-brand py-3 text-base font-semibold text-white hover:bg-brand-dark transition-colors glow-brand',
+              'press-scale flex w-full items-center justify-center gap-2 rounded-md bg-brand py-3 text-base font-semibold text-white hover:bg-brand-dark transition-colors glow-brand',
               approving && 'cursor-not-allowed opacity-60'
             )}
           >
+            {approving && (
+              <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+            )}
             {approving ? 'Approving…' : '1. Approve USDC for trading'}
           </button>
         ) : (
@@ -612,25 +719,41 @@ export function TradePanel({ market }: { market: MarketView | null }) {
               amount < MIN_BET ||
               !ready
             }
+            aria-busy={submitting}
             className={cn(
-              'press-scale w-full rounded-md py-3 text-base font-semibold text-white transition-colors',
+              'press-scale flex w-full items-center justify-center gap-2 rounded-md py-3 text-base font-semibold text-white transition-colors',
               dirCls,
               (submitting || insufficientBalance || !preview || amount < MIN_BET || !ready) &&
                 'cursor-not-allowed opacity-60'
             )}
           >
+            {submitting && (
+              <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+            )}
             {submitting
               ? 'Placing bet…'
               : insufficientBalance
               ? 'Insufficient USDC'
               : amount < MIN_BET
-              ? `Min $${MIN_BET}`
-              : `Bet ${market.direction} — $${amount} USDC`}
+              ? `Min $${MIN_BET.toFixed(2)}`
+              : !preview
+              ? 'Calculating fill…'
+              : `Bet ${market.direction} — $${amount.toFixed(2)} USDC`}
           </button>
         )}
       </div>
 
       <p className="mt-3 text-center text-xs text-text-dim">Powered by Thetanuts V4</p>
+
+      {pendingTrade && (
+        <ConfirmTradeModal
+          pending={pendingTrade}
+          onConfirm={(warning) => {
+            void confirmAndFillBet(warning);
+          }}
+          onCancel={() => setPendingTrade(null)}
+        />
+      )}
     </div>
   );
 }
@@ -721,6 +844,32 @@ function SummaryRow({
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function TradePanelSkeleton() {
+  return (
+    <div
+      aria-label="Loading trade panel"
+      className="rounded-xl border border-line bg-bg-elev p-4 animate-fade-in"
+    >
+      <div className="flex items-center justify-between">
+        <div className="h-5 w-32 animate-pulse rounded bg-surface-hover" />
+        <div className="h-5 w-16 animate-pulse rounded-full bg-surface-hover" />
+      </div>
+      <div className="mt-3 h-10 w-full animate-pulse rounded bg-surface-hover" />
+      <div className="mt-4 grid grid-cols-5 gap-1.5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-9 animate-pulse rounded-md bg-surface-hover"
+          />
+        ))}
+      </div>
+      <div className="mt-4 h-24 w-full animate-pulse rounded-lg bg-surface-hover" />
+      <div className="mt-3 h-9 w-full animate-pulse rounded-md bg-surface-hover" />
+      <div className="mt-4 h-12 w-full animate-pulse rounded-md bg-surface-hover" />
     </div>
   );
 }

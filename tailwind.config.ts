@@ -69,6 +69,12 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['var(--font-jetbrains)', 'ui-monospace', 'monospace'],
+        display: [
+          'var(--font-bricolage)',
+          'var(--font-inter)',
+          'system-ui',
+          'sans-serif',
+        ],
       },
       fontSize: {
         xs: ['10px', { lineHeight: '14px', letterSpacing: '0.6px' }],

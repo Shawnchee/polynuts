@@ -4,21 +4,29 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 import type { MarketView } from '@/lib/sdk/markets';
 import { TimerBadge } from '@/components/ui/TimerBadge';
+import { TokenIcon } from '@/components/ui/TokenIcon';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
 
-const ASSET_GLYPH: Record<string, string> = {
-  ETH: '◆',
-  BTC: '₿',
-  SOL: '◎',
-  XRP: '✕',
-  DOGE: 'Ð',
-  BNB: 'B',
-  AVAX: 'A',
-};
-
 const ROTATE_MS = 9_000;
+
+// Safe formatting — guards NaN/Infinity from SDK decimal parsing so a
+// brand-new market never renders "$NaN"/"NaNx". fmtUsd itself lives in
+// lib/utils (not owned here); see report note.
+function safeUsd(n: number, opts?: { compact?: boolean }): string {
+  return Number.isFinite(n) ? fmtUsd(n, opts) : '$0.00';
+}
+
+function safeMult(n: number | null | undefined, digits = 2): string | null {
+  return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(digits) : null;
+}
+
+function safeStrike(n: number): string {
+  return Number.isFinite(n)
+    ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+    : '—';
+}
 
 /**
  * Polymarket-style hero band — big rotating featured card on the left,
@@ -117,10 +125,15 @@ function HeroCard({
   // side, no separate price — just a market signal derived from the
   // SDK-simulated max payout.
   const oddsCents =
-    binary?.yesProbability != null
+    binary?.yesProbability != null &&
+    Number.isFinite(binary.yesProbability)
       ? Math.round(binary.yesProbability * 100)
       : null;
   const multiplier = binary?.multiplier ?? null;
+  // True while the SDK simulatePayout call is in flight for this market —
+  // used to swap blanks for skeleton pulses instead of letting the row
+  // visibly empty-then-pop when data arrives.
+  const binaryLoading = !binary && market.family !== 'vanilla';
   const volume = Number(client.utils.fromUsdcDecimals(market.availableUsdc));
   const isVanilla = market.family === 'vanilla';
   const dirColor =
@@ -152,21 +165,21 @@ function HeroCard({
         onClick={() => onSelect(market.id)}
         className="mt-3 flex items-start gap-3 text-left press-scale"
       >
-        <span
-          aria-hidden
-          className="num flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-bg-subtle text-xl font-bold text-text"
-        >
-          {ASSET_GLYPH[market.asset] ?? market.asset.slice(0, 1)}
-        </span>
+        <TokenIcon asset={market.asset} size={40} />
         <div className="min-w-0 flex-1">
           <h3 className="line-clamp-2 text-md font-semibold leading-snug text-text">
             {market.question}
           </h3>
-          {!isVanilla && oddsCents != null && (
-            <p className={cn('num mt-0.5 text-sm font-bold', dirColor)}>
+          {!isVanilla && oddsCents != null ? (
+            <p className={cn('num mt-0.5 text-sm font-bold tabular-nums', dirColor)}>
               {oddsCents}% chance
             </p>
-          )}
+          ) : binaryLoading ? (
+            <div
+              aria-label="Calculating implied probability"
+              className="mt-1 h-3.5 w-24 animate-pulse rounded bg-surface-hover"
+            />
+          ) : null}
         </div>
       </button>
 
@@ -174,10 +187,10 @@ function HeroCard({
           there is no NO side on the order book to fill, so we don't
           render one. Bounded structures show the SDK-derived multiplier;
           vanilla shows the strike-based CTA (open-ended payoff). */}
-      {!isVanilla && multiplier != null ? (
+      {!isVanilla && safeMult(multiplier) != null ? (
         <div className="mt-4">
           <HeroOutcome
-            label={`Bet ${market.direction} · ${multiplier.toFixed(2)}x max`}
+            label={`Bet ${market.direction} · ${safeMult(multiplier)}x max`}
             direction={market.direction}
             onClick={() => onSelect(market.id)}
           />
@@ -187,9 +200,9 @@ function HeroCard({
           <HeroOutcome
             label={`Bet ${
               market.direction === 'PUMP' ? 'above' : 'below'
-            } $${Number(
-              client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n)
-            ).toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
+            } ${safeStrike(
+              Number(client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n))
+            )}`}
             direction={market.direction}
             onClick={() => onSelect(market.id)}
           />
@@ -200,16 +213,16 @@ function HeroCard({
           to remove the dead vertical space the user flagged. */}
       <div className="mt-3 flex items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-          <span>
+          <span className="tabular-nums">
             <span className="num font-semibold text-text">
-              {fmtUsd(volume, { compact: true })}
+              {safeUsd(volume, { compact: true })}
             </span>{' '}
             vol
           </span>
-          {multiplier != null && (
-            <span>
+          {safeMult(multiplier) != null && (
+            <span className="tabular-nums">
               <span className="num font-semibold text-text">
-                {multiplier.toFixed(2)}x
+                {safeMult(multiplier)}x
               </span>{' '}
               max
             </span>
@@ -324,10 +337,10 @@ function HotList({
                   <span className="line-clamp-1 text-xs font-medium text-text">
                     {m.question}
                   </span>
-                  <span className="num text-[10px] text-text-dim">
-                    {fmtUsd(vol, { compact: true })}
-                    {mult != null && (
-                      <span className="ml-1.5">· {mult.toFixed(1)}x</span>
+                  <span className="num text-[10px] tabular-nums text-text-dim">
+                    {safeUsd(vol, { compact: true })}
+                    {safeMult(mult, 1) != null && (
+                      <span className="ml-1.5">· {safeMult(mult, 1)}x</span>
                     )}
                   </span>
                 </span>

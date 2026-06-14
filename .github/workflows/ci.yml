@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Typecheck · Lint · Test · Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit & integration tests
+        run: npm test
+        env:
+          # Stub env vars so clients.ts doesn't warn and the build doesn't throw.
+          NEXT_PUBLIC_CHAIN_ID: '8453'
+          NEXT_PUBLIC_REFERRER_ADDRESS: '0x0000000000000000000000000000000000000001'
+          NEXT_PUBLIC_RPC_URL: 'https://base-mainnet.public.blastapi.io'
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_CHAIN_ID: '8453'
+          NEXT_PUBLIC_REFERRER_ADDRESS: '0x0000000000000000000000000000000000000001'
+          NEXT_PUBLIC_RPC_URL: 'https://base-mainnet.public.blastapi.io'
+          NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: 'ci-placeholder'
+          NEXT_PUBLIC_APP_NAME: 'Polynuts'
+          NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'

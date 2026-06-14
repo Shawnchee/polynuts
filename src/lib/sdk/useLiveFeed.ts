@@ -86,7 +86,6 @@ export function useLiveFeed() {
         // info-level note tells future maintainers what happened without
         // shouting at the user.
         rpcDisabled = true;
-        // eslint-disable-next-line no-console
         console.info(
           '[polynuts] live activity polling disabled (RPC rate limit). ' +
             'Your own fills will still appear; upgrade NEXT_PUBLIC_RPC_URL ' +

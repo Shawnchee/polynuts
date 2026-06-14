@@ -1,11 +1,37 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useAccount } from 'wagmi';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+import type { Position, TradeHistory } from '@thetanuts-finance/thetanuts-client';
 import { PageShell } from '@/components/layout/PageShell';
 import { useAppStore, type ActivityItem } from '@/store/app';
-import { cn } from '@/lib/utils';
+import { usePositions, useTradeHistory } from '@/lib/sdk/usePortfolio';
+import { getReadClient } from '@/lib/sdk/clients';
+import { PnlPill } from '@/components/portfolio/PnlPill';
+import { TableSkeleton } from '@/components/portfolio/TableSkeleton';
+import { PnlCalendar } from '@/components/activity/PnlCalendar';
+import {
+  computeActivitySummary,
+  costBasisHistoryUsd,
+  isBuyerSettle,
+  isOpen,
+  pnlPct,
+  pnlUsd,
+  realizedPnlUsd,
+  type ActivitySummary,
+} from '@/lib/sdk/positionLogic';
+import {
+  dbBacked,
+  useTradeHistoryDb,
+  type DbTradeRow,
+} from '@/lib/sdk/useTradeHistoryDb';
+import type { PnlEntry } from '@/components/activity/PnlCalendar';
+import { cn, fmtUsd } from '@/lib/utils';
 
 type ActivityFilter = 'all' | 'PUMP' | 'DUMP' | 'RANGE' | 'wins';
+type Direction = 'PUMP' | 'DUMP' | 'RANGE';
 
 const filters: { id: ActivityFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -15,33 +41,123 @@ const filters: { id: ActivityFilter; label: string }[] = [
   { id: 'wins', label: 'Wins' },
 ];
 
+interface MergedRow {
+  key: string;
+  ts: number;
+  source: 'position' | 'history' | 'local';
+  position?: Position;
+  history?: TradeHistory;
+  local?: ActivityItem;
+  label: string;
+  asset: string;
+  direction?: Direction;
+  side?: 'buyer' | 'seller';
+  contracts?: number;
+  usdc?: number;
+  entryPrice?: number;
+  settlePrice?: number;
+  realizedPnl?: number;
+  status: string;
+  txHash?: string;
+}
+
 export default function ActivityPage() {
-  const activity = useAppStore((s) => s.activity);
+  const { address, isConnected } = useAccount();
+  const localActivity = useAppStore((s) => s.activity);
+  const useDb = dbBacked();
+
+  const { data: positions = [], isLoading: posLoading } = usePositions();
+  const { data: indexerHistory = [], isLoading: indexerHistLoading } = useTradeHistory();
+  const { data: dbRows = [], isLoading: dbLoading } = useTradeHistoryDb();
+
   const [filter, setFilter] = useState<ActivityFilter>('all');
 
+  const summary = useMemo<ActivitySummary>(() => {
+    if (useDb) return summaryFromDbRows(dbRows);
+    return computeActivitySummary(
+      indexerHistory,
+      address,
+      (h) => buildLabel(h.option.underlying, h.strikes, getReadClient()),
+      positions,
+    );
+  }, [useDb, dbRows, indexerHistory, address, positions]);
+
+  const merged = useMemo(
+    () =>
+      useDb
+        ? mergeRowsDb(positions, dbRows, localActivity)
+        : mergeRows(positions, indexerHistory, localActivity, address),
+    [useDb, positions, dbRows, indexerHistory, localActivity, address],
+  );
+
+  const calendarEntries = useMemo<PnlEntry[]>(() => {
+    if (useDb) {
+      return dbRows
+        .filter((r) => r.settled_at && r.pnl_usdc != null)
+        .map((r) => ({ ts: Date.parse(r.settled_at!), pnl: r.pnl_usdc as number }));
+    }
+    return indexerHistory
+      .filter((h) => isBuyerSettle(h, address))
+      .map((h) => ({
+        ts: h.timestamp * 1000,
+        pnl: realizedPnlUsd(h, positions),
+      }))
+      .filter((e) => Number.isFinite(e.pnl));
+  }, [useDb, dbRows, indexerHistory, address, positions]);
+
   const rows = useMemo(() => {
-    if (filter === 'all') return activity;
-    if (filter === 'wins') return activity.filter((a) => a.kind === 'filled');
-    return activity.filter((a) => a.direction === filter);
-  }, [activity, filter]);
+    if (filter === 'all') return merged;
+    if (filter === 'wins') {
+      return merged.filter((r) => {
+        if (r.realizedPnl != null) return r.realizedPnl > 0;
+        if (r.position) {
+          const v = pnlUsd(r.position);
+          return Number.isFinite(v) && v > 0;
+        }
+        return false;
+      });
+    }
+    return merged.filter((r) => r.direction === filter);
+  }, [merged, filter]);
+
+  const loading =
+    isConnected && (posLoading || (useDb ? dbLoading : indexerHistLoading));
+  const openCount = merged.filter((r) => r.status.toUpperCase() === 'OPEN').length;
 
   return (
     <PageShell active="/activity">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-text">Live Activity</h1>
-            <p className="mt-1 text-sm text-text-muted">
-              Bets you place will stream here in real time.
-            </p>
-          </div>
-          <div className="flex items-center gap-1 rounded-md border border-line bg-bg-elev p-1">
+      <div className="flex flex-col gap-6">
+        <header className="flex flex-col gap-1">
+          <h1 className="text-xl font-bold text-text">Activity</h1>
+          <p className="text-sm text-text-muted">
+            {openCount > 0
+              ? `${openCount} live ${openCount === 1 ? 'position' : 'positions'} • all settled outcomes below`
+              : 'Your settled outcomes, cancelled offers, and any live positions.'}
+          </p>
+        </header>
+
+        <SummaryStrip
+          summary={summary}
+          loading={loading && summary.settledCount === 0}
+          connected={isConnected}
+        />
+
+        <PnlCalendar entries={calendarEntries} />
+
+        <div className="flex items-center justify-end">
+          <div
+            className="flex items-center gap-1 rounded-md border border-line bg-bg-elev p-1"
+            role="tablist"
+            aria-label="Filter activity"
+          >
             {filters.map((f) => (
               <button
                 key={f.id}
+                role="tab"
+                aria-selected={filter === f.id}
                 onClick={() => setFilter(f.id)}
                 className={cn(
-                  'press-scale rounded-sm px-3 py-1.5 text-sm font-medium transition-all duration-180',
+                  'press-scale inline-flex min-h-[40px] items-center rounded-sm px-3 py-1.5 text-sm font-medium transition-all duration-180 sm:min-h-0',
                   filter === f.id
                     ? 'bg-text text-bg-elev'
                     : 'text-text-muted hover:text-text'
@@ -54,21 +170,12 @@ export default function ActivityPage() {
         </div>
 
         <section className="overflow-hidden rounded-xl border border-line bg-bg-elev">
-          {rows.length === 0 ? (
-            <div className="flex h-[60vh] flex-col items-center justify-center gap-2 px-4 text-center">
-              <p className="text-md font-medium text-text">Quiet on the wire</p>
-              <p className="max-w-sm text-sm text-text-muted">
-                Place a bet on the Markets page to see the feed light up. The
-                activity feed currently shows fills you initiate from this
-                browser session.
-              </p>
-            </div>
+          {loading ? (
+            <TableSkeleton cols={7} rows={4} />
+          ) : rows.length === 0 ? (
+            <EmptyState connected={isConnected} />
           ) : (
-            <ul className="divide-y divide-line">
-              {rows.map((row) => (
-                <Row key={row.id} item={row} />
-              ))}
-            </ul>
+            <ActivityTable rows={rows} />
           )}
         </section>
       </div>
@@ -76,42 +183,551 @@ export default function ActivityPage() {
   );
 }
 
-function Row({ item }: { item: ActivityItem }) {
-  const dot =
-    item.direction === 'PUMP'
-      ? 'bg-pump'
-      : item.direction === 'DUMP'
-      ? 'bg-dump'
-      : item.direction === 'RANGE'
-      ? 'bg-range'
-      : 'bg-text-dim';
-  const tag =
-    item.kind === 'filled'
-      ? { label: 'FILLED', cls: 'bg-pump-light dark:bg-pump/15 text-pump dark:text-pump-dark' }
-      : item.kind === 'cancelled'
-      ? { label: 'CANCELLED', cls: 'bg-dump-light dark:bg-dump/15 text-dump dark:text-dump-dark' }
-      : { label: 'NEW', cls: 'bg-brand-light dark:bg-brand/15 text-brand' };
-
+function SummaryStrip({
+  summary,
+  loading,
+  connected,
+}: {
+  summary: ActivitySummary;
+  loading: boolean;
+  connected: boolean;
+}) {
+  if (loading) return <SummarySkeleton />;
+  const hasData = summary.settledCount > 0;
+  const tiles: {
+    label: string;
+    value: React.ReactNode;
+    sub?: string;
+  }[] = [
+    {
+      label: 'Lifetime PnL',
+      value: hasData ? (
+        <PnlPill amount={summary.lifetimePnl} />
+      ) : (
+        <span className="text-text-dim">—</span>
+      ),
+      sub: hasData ? `${summary.settledCount} settled` : connected ? 'no settles yet' : 'connect wallet',
+    },
+    {
+      label: 'Win rate',
+      value: hasData ? (
+        <span className="num font-bold tabular-nums text-text">
+          {Math.round(summary.winRate * 100)}%
+        </span>
+      ) : (
+        <span className="text-text-dim">—</span>
+      ),
+      sub: hasData ? `${summary.wins} of ${summary.settledCount}` : undefined,
+    },
+    {
+      label: 'Best trade',
+      value: hasData && summary.bestTrade > 0 ? (
+        <PnlPill amount={summary.bestTrade} />
+      ) : (
+        <span className="text-text-dim">—</span>
+      ),
+      sub: summary.bestTradeLabel,
+    },
+    {
+      label: 'Current streak',
+      value: hasData ? (
+        <span
+          className={cn(
+            'num font-bold tabular-nums',
+            summary.streak > 0 ? 'text-pump dark:text-pump-dark' : 'text-text',
+          )}
+        >
+          {summary.streak > 0 ? `🔥 ${summary.streak}` : '0'}
+        </span>
+      ) : (
+        <span className="text-text-dim">—</span>
+      ),
+      sub: summary.streak > 0 ? `consecutive ${summary.streak === 1 ? 'win' : 'wins'}` : 'no streak',
+    },
+  ];
   return (
-    <li className="grid animate-fade-in grid-cols-[16px_1fr_120px_80px] items-center gap-3 px-4 py-3 transition-colors duration-180 hover:bg-surface-hover">
-      <span className={cn('h-2 w-2 rounded-full', dot)} />
-      <span className="truncate text-sm text-text">{item.question ?? item.kind}</span>
-      <span
-        className={cn(
-          'justify-self-end rounded-md px-2 py-0.5 text-xs font-bold uppercase',
-          tag.cls
-        )}
-      >
-        {tag.label}
-      </span>
-      <span className="num justify-self-end text-xs text-text-dim">{ago(item.ts)}</span>
-    </li>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {tiles.map((t, i) => (
+        <div
+          key={t.label}
+          className="card-lift rounded-xl border border-line bg-bg-elev px-4 py-3 animate-fade-in"
+          style={{ animationDelay: `${i * 40}ms` }}
+        >
+          <div className="label text-text-dim">{t.label}</div>
+          <div className="mt-1 text-lg leading-tight">{t.value}</div>
+          {t.sub && (
+            <div className="mt-1 truncate text-xs text-text-dim" title={t.sub}>
+              {t.sub}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
+}
+
+function SummarySkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-line bg-bg-elev px-4 py-3 animate-pulse"
+        >
+          <div className="h-3 w-20 rounded bg-bg-subtle" />
+          <div className="mt-2 h-6 w-28 rounded bg-bg-subtle" />
+          <div className="mt-2 h-3 w-16 rounded bg-bg-subtle" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ connected }: { connected: boolean }) {
+  if (!connected) {
+    return (
+      <div className="flex h-[40vh] flex-col items-center justify-center gap-3 px-4 text-center">
+        <p className="text-md font-medium text-text">Connect wallet to see your activity</p>
+        <p className="max-w-sm text-sm text-text-muted">
+          Your on-chain bets and settled outcomes show up here once your wallet is connected.
+        </p>
+        <ConnectButton />
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-[40vh] flex-col items-center justify-center gap-3 px-4 text-center">
+      <p className="text-md font-medium text-text">No trades yet</p>
+      <p className="max-w-sm text-sm text-text-muted">
+        Place a bet and your fills, settlements, and P&amp;L will light up here.
+      </p>
+      <Link
+        href="/"
+        className="press-scale rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+      >
+        Browse markets
+      </Link>
+    </div>
+  );
+}
+
+function ActivityTable({ rows }: { rows: MergedRow[] }) {
+  return (
+    <div className="scrollbar-thin overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="border-b border-line bg-bg-subtle text-left">
+          <tr className="label text-text-muted">
+            <Th>Time</Th>
+            <Th>Market</Th>
+            <Th>Side</Th>
+            <Th align="right">Contracts</Th>
+            <Th align="right">Cost</Th>
+            <Th align="right">Entry</Th>
+            <Th align="right">PnL</Th>
+            <Th>Status</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {rows.map((r) => (
+            <tr key={r.key} className="transition-colors hover:bg-surface-hover">
+              <Td>
+                <span className="num text-text-muted">{ago(r.ts)}</span>
+              </Td>
+              <Td>
+                <span className="font-medium text-text">{r.label}</span>
+                {r.settlePrice != null && Number.isFinite(r.settlePrice) && (
+                  <span className="ml-2 text-xs text-text-dim">
+                    settled @ {fmtPriceCompact(r.settlePrice)}
+                  </span>
+                )}
+              </Td>
+              <Td>
+                {r.side ? (
+                  <span
+                    className={cn(
+                      'font-semibold uppercase',
+                      r.side === 'buyer'
+                        ? 'text-pump dark:text-pump-dark'
+                        : 'text-dump dark:text-dump-dark'
+                    )}
+                  >
+                    {r.side === 'buyer' ? 'YES' : 'NO'}
+                  </span>
+                ) : (
+                  <span className="text-text-dim">—</span>
+                )}
+              </Td>
+              <Td align="right" mono>
+                {r.contracts != null && Number.isFinite(r.contracts)
+                  ? r.contracts.toLocaleString('en-US', { maximumFractionDigits: 4 })
+                  : '—'}
+              </Td>
+              <Td align="right" mono>
+                {r.usdc != null && Number.isFinite(r.usdc) ? fmtMoney(r.usdc) : '—'}
+              </Td>
+              <Td align="right" mono>
+                {r.entryPrice != null && Number.isFinite(r.entryPrice)
+                  ? fmtMoney(r.entryPrice)
+                  : '—'}
+              </Td>
+              <Td align="right">
+                {r.position ? (
+                  <LivePnlCell position={r.position} />
+                ) : r.realizedPnl != null && Number.isFinite(r.realizedPnl) ? (
+                  <PnlPill amount={r.realizedPnl} />
+                ) : (
+                  <span className="text-text-dim">—</span>
+                )}
+              </Td>
+              <Td>
+                <StatusBadge row={r} />
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function LivePnlCell({ position }: { position: Position }) {
+  const asset = position.option.underlying.toUpperCase() as 'ETH' | 'BTC';
+  useAppStore((s) => (asset === 'ETH' ? s.prices.ETH : asset === 'BTC' ? s.prices.BTC : undefined));
+  const pnl = pnlUsd(position);
+  if (!Number.isFinite(pnl)) return <span className="text-text-dim">—</span>;
+  return <PnlPill amount={pnl} percent={pnlPct(position)} />;
+}
+
+function StatusBadge({ row }: { row: MergedRow }) {
+  const status = row.status.toUpperCase();
+  const cls =
+    status === 'FILLED' || status === 'OPEN'
+      ? 'bg-pump-light dark:bg-pump/15 text-pump dark:text-pump-dark'
+      : status === 'CANCELLED'
+      ? 'bg-dump-light dark:bg-dump/15 text-dump dark:text-dump-dark'
+      : 'bg-bg-subtle text-text-muted';
+  return (
+    <span className={cn('rounded-md px-2 py-0.5 text-xs font-bold uppercase', cls)}>
+      {status}
+    </span>
+  );
+}
+
+function mergeRows(
+  positions: Position[],
+  history: TradeHistory[],
+  local: ActivityItem[],
+  address?: string,
+): MergedRow[] {
+  const client = getReadClient();
+  const out: MergedRow[] = [];
+  const seenTx = new Set<string>();
+
+  for (const p of positions) {
+    if (!isOpen(p)) continue;
+    if (!Number.isFinite(pnlUsd(p))) continue;
+    seenTx.add(p.entryTxHash);
+    const contracts = safe(() =>
+      Number(client.utils.formatAmount(p.amount, p.collateralDecimals || 6, 6))
+    );
+    const entryPrice = safe(() => Number(client.utils.fromPriceDecimals(p.entryPrice)));
+    const usdc =
+      contracts != null && entryPrice != null && Number.isFinite(contracts * entryPrice)
+        ? contracts * entryPrice
+        : undefined;
+    out.push({
+      key: `pos-${p.id}`,
+      ts: Number(p.entryTimestamp) * 1000,
+      source: 'position',
+      position: p,
+      label: buildLabel(p.option.underlying, p.option.strikes, client),
+      asset: p.option.underlying,
+      direction: directionOf(p.option.optionType, p.option.strikes.length),
+      side: p.side,
+      contracts,
+      usdc,
+      entryPrice,
+      status: p.status || 'OPEN',
+      txHash: p.entryTxHash,
+    });
+  }
+
+  for (const h of history) {
+    if (seenTx.has(h.txHash) && h.type === 'fill') continue;
+    const dec = h.collateralDecimals || 6;
+    const contracts = safe(() => Number(client.utils.formatAmount(h.amount, dec, 6)));
+    const price = safe(() => Number(client.utils.fromPriceDecimals(h.price)));
+    const settlePrice = h.settlement
+      ? safe(() => Number(client.utils.fromPriceDecimals(h.settlement!.settlementPrice)))
+      : undefined;
+    const realized = isBuyerSettle(h, address)
+      ? realizedPnlUsd(h, positions)
+      : undefined;
+    const indexerCost = isBuyerSettle(h, address)
+      ? costBasisHistoryUsd(h, positions)
+      : NaN;
+    const fallbackCost =
+      contracts != null && price != null && Number.isFinite(contracts * price)
+        ? contracts * price
+        : undefined;
+    const cost = Number.isFinite(indexerCost) ? indexerCost : fallbackCost;
+    out.push({
+      key: `hist-${h.id}-${h.txHash}`,
+      ts: h.timestamp * 1000,
+      source: 'history',
+      history: h,
+      label: buildLabel(h.option.underlying, h.strikes, client),
+      asset: h.option.underlying,
+      direction: directionOf(undefined, h.strikes.length, h.optionTypeRaw),
+      side: h.buyer ? 'buyer' : 'seller',
+      contracts,
+      usdc: cost,
+      entryPrice: price,
+      settlePrice,
+      realizedPnl: realized != null && Number.isFinite(realized) ? realized : undefined,
+      status: h.type.toUpperCase(),
+      txHash: h.txHash,
+    });
+  }
+
+  for (const a of local) {
+    out.push({
+      key: `loc-${a.id}`,
+      ts: a.ts,
+      source: 'local',
+      local: a,
+      label: a.question ?? (`${a.asset ?? ''} ${a.direction ?? ''}`.trim() || a.kind),
+      asset: a.asset ?? '',
+      direction: a.direction,
+      status: a.kind.toUpperCase(),
+    });
+  }
+
+  out.sort((a, b) => b.ts - a.ts);
+  return out;
+}
+
+/**
+ * Build merged rows when the trade history comes from our own Supabase
+ * (sync-on-visit). Open positions still come from the indexer (live PnL).
+ * Local optimistic activity is appended unchanged.
+ */
+function mergeRowsDb(
+  positions: Position[],
+  dbRows: DbTradeRow[],
+  local: ActivityItem[],
+): MergedRow[] {
+  const client = getReadClient();
+  const out: MergedRow[] = [];
+  const seenTx = new Set<string>();
+
+  for (const p of positions) {
+    if (!isOpen(p)) continue;
+    if (!Number.isFinite(pnlUsd(p))) continue;
+    seenTx.add(p.entryTxHash);
+    const contracts = safe(() =>
+      Number(client.utils.formatAmount(p.amount, p.collateralDecimals || 6, 6)),
+    );
+    const entryPrice = safe(() => Number(client.utils.fromPriceDecimals(p.entryPrice)));
+    const usdc =
+      contracts != null && entryPrice != null && Number.isFinite(contracts * entryPrice)
+        ? contracts * entryPrice
+        : undefined;
+    out.push({
+      key: `pos-${p.id}`,
+      ts: Number(p.entryTimestamp) * 1000,
+      source: 'position',
+      position: p,
+      label: buildLabel(p.option.underlying, p.option.strikes, client),
+      asset: p.option.underlying,
+      direction: directionOf(p.option.optionType, p.option.strikes.length),
+      side: p.side,
+      contracts,
+      usdc,
+      entryPrice,
+      status: p.status || 'OPEN',
+      txHash: p.entryTxHash,
+    });
+  }
+
+  for (const r of dbRows) {
+    // Skip rows that are mirrored by an active position above (avoid dupes
+    // for fills that haven't settled yet — the live position is more
+    // useful since it has streaming PnL).
+    if (seenTx.has(r.tx_hash)) continue;
+    const direction =
+      r.side === 'PUMP' || r.side === 'DUMP' || r.side === 'RANGE'
+        ? (r.side as Direction)
+        : undefined;
+    const settled = !!r.settled_at;
+    out.push({
+      key: `db-${r.id}`,
+      ts: settled ? Date.parse(r.settled_at!) : Date.parse(r.created_at),
+      source: 'history',
+      label: r.market_label ?? '—',
+      asset: '',
+      direction,
+      side: 'buyer',
+      contracts: r.contracts,
+      usdc: r.notional_usdc || undefined,
+      entryPrice: r.entry_price ?? undefined,
+      settlePrice: r.settle_price ?? undefined,
+      realizedPnl: r.pnl_usdc ?? undefined,
+      status: settled ? 'SETTLE' : 'FILLED',
+      txHash: r.tx_hash,
+    });
+  }
+
+  for (const a of local) {
+    out.push({
+      key: `loc-${a.id}`,
+      ts: a.ts,
+      source: 'local',
+      local: a,
+      label: a.question ?? (`${a.asset ?? ''} ${a.direction ?? ''}`.trim() || a.kind),
+      asset: a.asset ?? '',
+      direction: a.direction,
+      status: a.kind.toUpperCase(),
+    });
+  }
+
+  out.sort((a, b) => b.ts - a.ts);
+  return out;
+}
+
+function summaryFromDbRows(dbRows: DbTradeRow[]): ActivitySummary {
+  const settled = dbRows
+    .filter((r) => r.settled_at && r.pnl_usdc != null)
+    .map((r) => ({
+      pnl: r.pnl_usdc as number,
+      label: r.market_label ?? '',
+      ts: Date.parse(r.settled_at!),
+    }))
+    .sort((a, b) => b.ts - a.ts);
+
+  let lifetimePnl = 0;
+  let wins = 0;
+  let bestTrade = 0;
+  let bestTradeLabel: string | undefined;
+  for (const s of settled) {
+    lifetimePnl += s.pnl;
+    if (s.pnl > 0) wins++;
+    if (s.pnl > bestTrade) {
+      bestTrade = s.pnl;
+      bestTradeLabel = s.label;
+    }
+  }
+  let streak = 0;
+  for (const s of settled) {
+    if (s.pnl > 0) streak++;
+    else break;
+  }
+  return {
+    lifetimePnl,
+    winRate: settled.length ? wins / settled.length : 0,
+    settledCount: settled.length,
+    wins,
+    bestTrade,
+    bestTradeLabel,
+    streak,
+  };
+}
+
+function buildLabel(
+  underlying: string,
+  strikes: bigint[],
+  client: ReturnType<typeof getReadClient>
+): string {
+  const fmt = (s: bigint) =>
+    `$${Number(client.utils.fromStrikeDecimals(s)).toLocaleString('en-US', {
+      maximumFractionDigits: 0,
+    })}`;
+  return `${underlying} ${strikes.map(fmt).join(' / ')}`;
+}
+
+function directionOf(
+  optionType: number | undefined,
+  strikeCount: number,
+  raw?: number
+): Direction | undefined {
+  const t = optionType ?? raw;
+  if (t == null) {
+    if (strikeCount >= 2) return 'RANGE';
+    return undefined;
+  }
+  // Matches sideFromOptionType in src/lib/supabase/sync.ts — must stay in sync
+  // with what is stored in the DB so the non-DB (indexer) path shows the same labels.
+  if (t === 0 || t === 3) return 'PUMP';
+  if (t === 1 || t === 4) return 'DUMP';
+  if (t === 2 || t === 5) return 'RANGE';
+  return undefined;
+}
+
+function safe<T>(fn: () => T): T | undefined {
+  try {
+    return fn();
+  } catch {
+    return undefined;
+  }
 }
 
 function ago(ts: number): string {
   const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
   if (sec < 60) return `${sec}s ago`;
   if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  return `${Math.floor(sec / 3600)}h ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
+
+/**
+ * Money formatter that keeps fidelity for sub-cent amounts.
+ * fmtUsd rounds to 2dp which collapses $0.0001 → $0.00 — bad for micro-positions.
+ */
+function fmtMoney(amount: number): string {
+  const abs = Math.abs(amount);
+  if (abs === 0) return '$0.00';
+  if (abs >= 1000) return fmtUsd(amount, { compact: true });
+  const digits = abs < 0.01 ? 6 : abs < 1 ? 4 : 2;
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+function fmtPriceCompact(price: number): string {
+  if (price >= 1000)
+    return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  return `$${price.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+}
+
+function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
+  return (
+    <th className={'px-4 py-2 ' + (align === 'right' ? 'text-right' : 'text-left')}>
+      {children}
+    </th>
+  );
+}
+
+function Td({
+  children,
+  align,
+  mono,
+}: {
+  children: React.ReactNode;
+  align?: 'right';
+  mono?: boolean;
+}) {
+  return (
+    <td
+      className={
+        'px-4 py-3 ' +
+        (align === 'right' ? 'text-right ' : 'text-left ') +
+        (mono ? 'num tabular-nums ' : '')
+      }
+    >
+      {children}
+    </td>
+  );
 }

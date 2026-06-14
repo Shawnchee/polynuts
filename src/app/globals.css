@@ -63,6 +63,25 @@
   color-scheme: dark;
 }
 
+/* SpotlightCard — mouse-tracking radial highlight */
+.spotlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    400px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    var(--spotlight-color, rgba(255,255,255,0.06)),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  z-index: 1;
+}
+.spotlight-card:hover::before { opacity: 1; }
+.spotlight-card > * { position: relative; z-index: 2; }
+
 * {
   box-sizing: border-box;
   border-color: rgb(var(--line));
@@ -113,20 +132,35 @@ body::before {
     radial-gradient(circle at 90% 105%, rgba(167, 139, 250, 0.08), transparent 45%);
 }
 
+/* Bricolage Grotesque is the display/brand face for headings; body stays on
+   Inter. Tracking is left to the per-size fontSize tokens (which already
+   tighten the larger steps), so this only swaps the family. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-bricolage), var(--font-inter), system-ui, sans-serif;
+}
+
 button {
   font-family: inherit;
 }
 
 input:focus-visible,
 button:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
 
 [data-theme='dark'] input:focus-visible,
 [data-theme='dark'] button:focus-visible,
-[data-theme='dark'] select:focus-visible {
+[data-theme='dark'] select:focus-visible,
+[data-theme='dark'] textarea:focus-visible,
+[data-theme='dark'] a:focus-visible,
+[data-theme='dark'] [tabindex]:focus-visible {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
 }
 
@@ -146,6 +180,21 @@ select:focus-visible {
   .num {
     font-family: var(--font-jetbrains), ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
+  }
+  /* Tabular numerals without forcing the mono face — for inline figures that
+     should stay non-jittery in the sans stack (P/L, counts, %). Additive. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Shared visible focus ring for custom interactive surfaces. Additive
+     helper so non-form elements (divs/spans acting as buttons) can opt in
+     to the same brand ring used by inputs/buttons. */
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+  }
+  [data-theme='dark'] .focus-ring:focus-visible {
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
   }
   .label {
     font-size: 10px;
@@ -203,6 +252,24 @@ select:focus-visible {
     filter: blur(80px);
     opacity: 0.45;
     pointer-events: none;
+  }
+
+  /* ── Landing-page surface textures ───────────────────────────────────────
+     A faint blueprint grid + soft top vignette replace the old WebGL aurora.
+     The grid is a flat CSS background (no blur, no rainbow), masked so it
+     fades toward the edges and never competes with foreground content. */
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+    background-size: 64px 64px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+  }
+  /* Hairline divider that fades at both ends — used between sections. */
+  .rule-fade {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(148, 163, 184, 0.22), transparent);
   }
 
   /* Stagger delay helpers for grid entrance */

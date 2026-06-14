@@ -55,7 +55,7 @@ export function useMarketBinaryFraming(market: MarketView | null) {
   const enabled = !!market && market.family !== 'vanilla';
   return useQuery({
     queryKey: market
-      ? ['payout-unit', market.implementation, market.strikesContract.map(String), PROBE_UNIT.toString()]
+      ? ['payout-unit', market.implementation, market.strikesContract.map(String), market.pricePerContract.toString(), PROBE_UNIT.toString()]
       : ['payout-unit', null],
     queryFn: async () => {
       if (!market) return null;

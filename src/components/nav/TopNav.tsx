@@ -9,7 +9,7 @@ import { ChainStatusChip } from '@/components/nav/NetworkGuard';
 import { cn } from '@/lib/utils';
 
 const tabs = [
-  { href: '/', label: 'Markets' },
+  { href: '/markets', label: 'Markets' },
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/activity', label: 'Activity' },
@@ -21,24 +21,26 @@ export function TopNav({ active = '/' }: { active?: string }) {
 
   return (
     <header className="sticky top-0 z-30 glass border-b border-line">
-      <div className="mx-auto flex h-14 max-w-page items-center justify-between px-6">
+      <div className="mx-auto flex h-14 max-w-page items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-8">
           <Link
             href="/"
-            className="select-none text-md font-bold tracking-tight transition-opacity hover:opacity-90"
+            aria-label="Polynuts home"
+            className="font-display flex cursor-pointer select-none items-center text-md font-bold tracking-tight transition-opacity hover:opacity-90"
           >
             <span className="text-brand">poly</span>
             <span className="text-text">nuts</span>
           </Link>
-          <nav className="flex items-center gap-1">
+          <nav aria-label="Primary" className="hidden items-center gap-1 sm:flex">
             {tabs.map((t) => {
               const isActive = active === t.href;
               return (
                 <Link
                   key={t.href}
                   href={t.href}
+                  aria-current={isActive ? 'page' : undefined}
                   className={cn(
-                    'relative rounded-md px-3 py-1.5 text-base transition-colors duration-180',
+                    'relative flex cursor-pointer items-center rounded-md px-3 py-2 text-base transition-colors duration-180',
                     isActive
                       ? 'font-semibold text-text bg-surface'
                       : 'font-medium text-text-muted hover:text-text hover:bg-surface-hover'
@@ -48,7 +50,7 @@ export function TopNav({ active = '/' }: { active?: string }) {
                   {isActive && (
                     <span
                       aria-hidden
-                      className="absolute inset-x-3 -bottom-px h-[2px] rounded-full bg-brand"
+                      className="absolute inset-x-3 bottom-1 h-[2px] rounded-full bg-brand"
                     />
                   )}
                 </Link>
