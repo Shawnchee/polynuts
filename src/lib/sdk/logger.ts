@@ -62,28 +62,23 @@ function isExpectedNoise(msg: string, meta: unknown): boolean {
 export const polynutsLogger: ThetanutsLogger = {
   debug(msg, meta) {
     if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
       console.debug(`[sdk] ${msg}`, meta ?? '');
     }
   },
   info(msg, meta) {
     if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
       console.info(`[sdk] ${msg}`, meta ?? '');
     }
   },
   warn(msg, meta) {
-    // eslint-disable-next-line no-console
     console.warn(`[sdk] ${msg}`, meta ?? '');
     report(`[sdk warn] ${msg}`, meta);
   },
   error(msg, meta) {
     if (isExpectedNoise(msg, meta)) {
-      // eslint-disable-next-line no-console
       console.info(`[sdk] ${msg} (expected — RPC limit or user action)`);
       return;
     }
-    // eslint-disable-next-line no-console
     console.error(`[sdk] ${msg}`, meta ?? '');
     report(`[sdk error] ${msg}`, meta);
   },

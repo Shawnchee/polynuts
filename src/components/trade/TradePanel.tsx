@@ -170,7 +170,6 @@ export function TradePanel({
     }
     setApproving(true);
     const t = toast.loading('Sign the approval in your wallet…');
-    // eslint-disable-next-line no-console
     console.info('[polynuts] approve start', {
       usdc: signerClient.chainConfig.tokens.USDC.address,
       spender: orderOptionBook,
@@ -203,7 +202,6 @@ export function TradePanel({
         gasLimit: 80_000n,
       });
       const receipt = await tx.wait();
-      // eslint-disable-next-line no-console
       console.info('[polynuts] approve mined', { txHash: receipt?.hash });
       // Bust the allowance cache so the bet button activates immediately.
       await queryClient.invalidateQueries({ queryKey: ['usdc-allowance'] });
@@ -233,7 +231,6 @@ export function TradePanel({
         // Not an error — the user explicitly clicked Reject in their
         // wallet. Don't shout in the console; show a friendly toast
         // explaining they're free to try again.
-        // eslint-disable-next-line no-console
         console.info('[polynuts] approve cancelled by user');
         toast.info(
           'You rejected the approval. Click "Approve USDC" again to retry.',
@@ -242,7 +239,6 @@ export function TradePanel({
         return;
       }
       // Real error — log + toast.
-      // eslint-disable-next-line no-console
       console.error('[polynuts] approve error', err);
       let msg = 'Approval failed';
       if (/insufficient funds/i.test(msgText)) msg = 'Insufficient ETH for gas';
@@ -332,7 +328,6 @@ export function TradePanel({
 
     setSubmitting(true);
     const t = toast.loading('Placing your bet…');
-    // eslint-disable-next-line no-console
     console.info('[polynuts] confirmAndFillBet start', {
       market: trade.market.id,
       amount: trade.amount,
@@ -350,22 +345,18 @@ export function TradePanel({
       // allowance already covers usdcAmount, so users who pre-approved
       // via the explicit "Approve USDC" button don't see a second wallet
       // popup here.
-      // eslint-disable-next-line no-console
       console.info('[polynuts] ensureAllowance', { usdcAddr, orderOptionBook, usdcAmount });
       const approveReceipt = await signerClient.erc20.ensureAllowance(
         usdcAddr,
         orderOptionBook,
         usdcAmount
       );
-      // eslint-disable-next-line no-console
       console.info('[polynuts] approval done', { txHash: approveReceipt?.hash ?? 'already-approved' });
-      // eslint-disable-next-line no-console
       console.info('[polynuts] fillOrder start');
       const receipt = await signerClient.optionBook.fillOrder(
         trade.market.order,
         usdcAmount
       );
-      // eslint-disable-next-line no-console
       console.info('[polynuts] fillOrder done', { txHash: receipt?.hash });
 
       // Write this trade to Supabase immediately so it appears in the
@@ -408,12 +399,10 @@ export function TradePanel({
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload),
             }).catch((err) => {
-              // eslint-disable-next-line no-console
               console.warn('[polynuts] write-on-fill failed (non-critical)', err);
             });
           }
         } catch (err) {
-          // eslint-disable-next-line no-console
           console.warn('[polynuts] receipt parse failed (non-critical)', err);
         }
       }
@@ -465,7 +454,6 @@ export function TradePanel({
         /user rejected|user denied|action_rejected/i.test(msgText) ||
         (err as { code?: number }).code === 4001;
       if (wasRejection) {
-        // eslint-disable-next-line no-console
         console.info('[polynuts] bet cancelled by user');
         toast.info('You rejected the bet. Click again to retry.', {
           id: t,
@@ -473,7 +461,6 @@ export function TradePanel({
         });
         return;
       }
-      // eslint-disable-next-line no-console
       console.error('[polynuts] confirmAndFillBet error', err);
       let msg = 'Transaction failed';
       if (err instanceof OrderExpiredError) msg = 'Market closed — pick a fresh one';

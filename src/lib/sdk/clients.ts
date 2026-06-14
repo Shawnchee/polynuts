@@ -27,7 +27,6 @@ if (REFERRER_MISSING) {
   if (typeof window !== 'undefined') {
     // Non-production: dev must still run with no referrer. Warn once at module
     // init so it's visible during a smoke test. Browser-only so SSR isn't noisy.
-    // eslint-disable-next-line no-console
     console.warn(
       '[polynuts] NEXT_PUBLIC_REFERRER_ADDRESS not set (or zero) — all referrer fees will be burned. Set this to your Gnosis Safe / multisig before launch.'
     );

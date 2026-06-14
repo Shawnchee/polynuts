@@ -78,7 +78,6 @@ export function useSignerClient(): SignerClientState {
         notReadyReason: null,
       };
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('[polynuts] failed to build ethers signer from wagmi client', err);
       return {
         signerClient: null,
