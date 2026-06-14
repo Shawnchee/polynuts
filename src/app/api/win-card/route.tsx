@@ -1,7 +1,11 @@
 import { ImageResponse } from 'next/og';
 import type { NextRequest } from 'next/server';
 
-export const runtime = 'edge';
+// Node.js runtime, not edge: next/og's ImageResponse bundles satori + resvg
+// WASM (~1 MB), which trips Vercel's 1 MB edge-function size limit on the free
+// plan. Node serverless functions have a far larger limit and ImageResponse
+// runs there too, so this renders identically without the size ceiling.
+export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -20,7 +24,7 @@ export async function GET(req: NextRequest) {
   // leak arbitrary text into the accent-colour switch below.
   const dirRaw = (params.get('direction') ?? 'PUMP').toUpperCase();
   const direction = dirRaw === 'DUMP' || dirRaw === 'RANGE' ? dirRaw : 'PUMP';
-  // `q` is fully user-controlled and rendered into a public, uncached edge
+  // `q` is fully user-controlled and rendered into a public, uncached
   // image — cap its length so it can't be abused to render huge text payloads.
   const rawHeadline = params.get('q');
   const headline = rawHeadline
@@ -196,7 +200,7 @@ export async function GET(req: NextRequest) {
   );
 
   // Output is deterministic per query string, so cache hard at the CDN —
-  // without this the public edge route re-renders an image on every hit, the
+  // without this the public route re-renders an image on every hit, the
   // abuse/cost vector for an unauthenticated OG endpoint. next/og injects its
   // own `Cache-Control: …max-age=31536000` default; passing headers to the
   // constructor APPENDS to it, yielding a malformed header with two max-age
