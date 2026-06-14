@@ -31,6 +31,13 @@ So the remaining work is **not** "obtain these values" — it's mostly:
 ⚠️ `NEXT_PUBLIC_*` vars are **baked in at build time**, not read at runtime — they must be set in
 Vercel *before* the production build, and any change requires a redeploy to take effect.
 
+### Update — 2026-06-15 (verify-sdk passed; **leaderboard cron dropped from v1**)
+
+- ✅ `node scripts/verify-sdk.mjs` **PASS** — 9 samples (butterfly/spread/ranger) + 4 bet sizes; multipliers/payouts/implied-prob all valid; linearity drift <0.01%. (Skips vanilla PUMP/DUMP by design — that path is covered by the $1 smoke test.)
+- ⚠️ **The Alchemy key in `.env.local` is FREE tier.** Free tier caps `eth_getLogs` to a 10-block range; the cron's fill-recovery scans 3000 blocks → the whole pass 500s. Same key in Vercel ⇒ same failure in prod. Trading + `/portfolio` are unaffected (indexer + `eth_call`, no getLogs).
+- ✅ **Decision: drop the leaderboard cron from v1.** It is NOT load-bearing — settlements are also written on-demand by `GET /api/me/trades` → `syncSettlementsOnly` (indexer + DB, no getLogs) every time a trader views their portfolio (`useTradeHistoryDb.ts:44`). The cron only added (a) settling absent traders who never return, and (b) the getLogs recovery net. **Accepted v1 gap:** an absent winner's leaderboard PnL lags until they revisit; self-heals on their next visit.
+- Done in this pass: `crons` removed from `vercel.json` (now `{}`); `CRON_SECRET` removed from `.env.local` and the env list. **Cron route file kept** (just unscheduled) so it's trivial to re-enable on a paid RPC later — add a Job-1 `try/catch` then so a getLogs hiccup can't take down the settlement sync.
+
 ---
 
 ## What actually breaks vs. degrades (code-verified)
@@ -44,8 +51,8 @@ runs and can place a bet. But "runs" ≠ "ready for users." Priority is by real-
 | `NEXT_PUBLIC_REFERRER_ADDRESS` | Build throws if zero (`clients.ts:14`) | ✅ DONE |
 | `NEXT_PUBLIC_RPC_URL` | Falls back to **public** Base RPC (`wagmi.ts:14`, `clients.ts:8`, `supabase/sync.ts:18`). Works but rate-limits leaderboard event-scan + payout sims; live feed self-disables under load | **P0 for real traffic** |
 | `NEXT_PUBLIC_SUPABASE_URL` / `_ANON_KEY` | Guarded by `hasSupabaseConfigClient` → leaderboard + trade-history show empty states, no crash. Core trading does not touch Supabase | P1 |
-| `SUPABASE_SERVICE_ROLE_KEY` | Cron returns 500; write-on-fill fails but is caught (non-critical) | P1 |
-| `CRON_SECRET` | Cron is fail-closed — 401s everything (`route.ts:91`). No security hole; leaderboard just never auto-syncs | P1 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only writes fail (caught). Needed by `/api/me/trades` write-on-fill + on-visit settlement sync | P1 |
+| `CRON_SECRET` | **Cron dropped from v1** (2026-06-15 update) — not needed. Settlements sync via `GET /api/me/trades` on portfolio visit | ✅ N/A in v1 |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WC connector **silently dropped** (`wagmi.ts:19`); MetaMask/Coinbase/Rainbow still connect. Mobile WC-QR users can't connect | P2 (cheap) |
 | `NEXT_PUBLIC_CHAIN_ID` | Defaults to `8453` (Base) | ✅ default OK |
 | `BLOCKED_COUNTRIES` | Defaults to `US` (server-only; never `NEXT_PUBLIC_`) | ✅ default OK |
@@ -62,8 +69,7 @@ runs and can place a bet. But "runs" ≠ "ready for users." Priority is by real-
 - [ ] Add Supabase env to Vercel (values in `.env.local`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (service-role is server-only).
 - [x] ✅ **Migration applied + verified (2026-06-14, via Supabase MCP)** against the live project the app reads (`dgtmgtxoylpmzwzsacrr` = `NEXT_PUBLIC_SUPABASE_URL`). `0001_leaderboard` recorded; `traders`/`trades`/`settlements` exist with RLS **on**; only `public read` SELECT policies (no public write); `leaderboard_v` has `security_invoker=true` + anon/authenticated SELECT grant; **security advisors return 0 lints**.
 - [x] ✅ **Seeded** — `traders` already holds 2 rows incl. the owner/referrer address `0xe6c3…e7ef` (plus a `0x…0001` test placeholder, harmless). First cron run has something to scan.
-- [ ] **`CRON_SECRET`** — value already generated and in `.env.local`; add it to Vercel (server-only, no `NEXT_PUBLIC_`). Vercel Cron auto-sends it as `Authorization: Bearer <secret>`; route validates at `route.ts:90-94`. No code change. **Do not commit the value.**
-- [ ] Confirm the cron shows active in the Vercel dashboard after deploy (`vercel.json` = `*/30 * * * *`).
+- [x] ✅ **Leaderboard cron dropped from v1** (2026-06-15) — no `CRON_SECRET`, no Vercel cron, no Hobby once-a-day limit. Settlements sync on-demand via `GET /api/me/trades` when a trader views their portfolio (indexer + DB, free-tier OK). Re-add later (with a Job-1 `try/catch`) on a paid RPC if absent-trader accuracy ever matters.
 
 ## P2 — cheap wins
 
@@ -96,11 +102,11 @@ Per `production_checklist.md` §8 and `TODO.md`:
 
 ```
 1. Vercel: import repo, Production Branch = main
-2. Copy ALL env vars from .env.local into Vercel — values already exist:
-   RPC (keyed) + referrer + Supabase x3 + CRON_SECRET + WalletConnect ID
+2. Copy env vars from .env.local into Vercel — values already exist:
+   RPC (keyed) + referrer + Supabase x3 + WalletConnect ID   (NO CRON_SECRET — cron dropped)
    (NEXT_PUBLIC_* are build-time → set before build, redeploy to change)
 3. ✅ DB DONE — migration applied, RLS verified, 2 traders seeded (Supabase MCP, 2026-06-14)
-4. node scripts/verify-sdk.mjs   ← HARD GATE (run against the real RPC)
+4. ✅ verify-sdk.mjs PASS (2026-06-15) — pricing hard gate cleared
 5. $1 mainnet bet from the deployed URL
 6. Ship
 ```
