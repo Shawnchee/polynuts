@@ -3,10 +3,6 @@
 import { Trophy } from 'lucide-react';
 import { PageShell } from '@/components/layout/PageShell';
 import {
-  useBookDailyStats,
-  reduceDailyStats,
-} from '@/lib/sdk/useLeaderboard';
-import {
   useLeaderboardDb,
   type LeaderboardDbRow,
 } from '@/lib/sdk/useLeaderboardDb';
@@ -14,8 +10,6 @@ import { hasSupabaseConfigClient } from '@/lib/supabase/browser';
 import { fmtUsd, shortAddress } from '@/lib/utils';
 
 export default function LeaderboardPage() {
-  const { data: dailyStats } = useBookDailyStats();
-  const protocol = reduceDailyStats(dailyStats);
   const supabaseReady = hasSupabaseConfigClient();
 
   return (
@@ -24,16 +18,9 @@ export default function LeaderboardPage() {
         <div>
           <h1 className="text-xl font-bold text-text">Leaderboard</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Lifetime protocol stats from the Thetanuts indexer. Per-trader rankings from our own sync job.
+            Per-trader rankings — trades, win rate, and realized PnL from Polynuts fills.
           </p>
         </div>
-
-        <ProtocolStrip
-          totalTrades={protocol.totalTrades}
-          totalVolumeUsd={protocol.totalVolumeUsd}
-          daysCovered={protocol.daysCovered}
-          latestDate={protocol.latestDate}
-        />
 
         {supabaseReady ? <LeaderboardTable /> : <WarmingUp />}
       </div>
@@ -49,8 +36,7 @@ function LeaderboardTable() {
       <section className="flex flex-col items-center justify-center gap-2 rounded-xl border border-line bg-bg-elev px-6 py-12 text-center">
         <h2 className="text-md font-semibold text-text">Couldn&apos;t load the leaderboard</h2>
         <p className="max-w-md text-sm text-text-muted">
-          Rankings are temporarily unavailable. Lifetime protocol totals above are
-          unaffected — try again in a moment.
+          Rankings are temporarily unavailable — try again in a moment.
         </p>
       </section>
     );
@@ -141,56 +127,9 @@ function WarmingUp() {
       </div>
       <h2 className="text-md font-semibold text-text">Leaderboard is warming up</h2>
       <p className="max-w-md text-sm text-text-muted">
-        Per-trader rankings populate once the indexer is connected. Lifetime
-        protocol totals above update every 5 minutes.
+        Per-trader rankings populate once wallets have placed and settled trades
+        on Polynuts.
       </p>
     </section>
-  );
-}
-
-function ProtocolStrip({
-  totalTrades,
-  totalVolumeUsd,
-  daysCovered,
-  latestDate,
-}: {
-  totalTrades: number;
-  totalVolumeUsd: number;
-  daysCovered: number;
-  latestDate: string | null;
-}) {
-  const cells = [
-    {
-      label: 'Lifetime Volume',
-      value: totalVolumeUsd > 0 ? fmtUsd(totalVolumeUsd, { compact: true }) : '—',
-    },
-    {
-      label: 'Lifetime Trades',
-      value: totalTrades > 0 ? totalTrades.toLocaleString() : '—',
-    },
-    {
-      label: 'Days Indexed',
-      value: daysCovered > 0 ? daysCovered.toString() : '—',
-    },
-    {
-      label: 'Latest Day',
-      value: latestDate ?? '—',
-    },
-  ];
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {cells.map((c, i) => (
-        <div
-          key={c.label}
-          className="card-lift rounded-xl border border-line bg-bg-elev px-4 py-3 animate-fade-in"
-          style={{ animationDelay: `${i * 40}ms` }}
-        >
-          <div className="label text-text-dim">{c.label}</div>
-          <div className="num mt-1 text-md font-bold tabular-nums text-text">
-            {c.value}
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
