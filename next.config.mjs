@@ -1,6 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // The Thetanuts SDK's axios client joins its baseURL with "/" for the
+  // order-book root call, so it requests `/api/orderbook/` (trailing slash).
+  // With the default trailing-slash redirect, that 308s to `/api/orderbook` on
+  // every poll (prices ~5s, orders ~30s) — an uncached extra round-trip on the
+  // hot path. Skipping the redirect lets the proxy serve the trailing form
+  // directly. This app's canonical URLs are explicit (sitemap/OG use
+  // non-trailing polynuts.xyz paths), so serving both forms is harmless here.
+  skipTrailingSlashRedirect: true,
   // Baseline security headers for a real-money app. frame-ancestors 'none'
   // blocks clickjacking of the bet button; nosniff prevents MIME confusion
   // attacks on the OG/win-card route; Referrer-Policy avoids leaking the

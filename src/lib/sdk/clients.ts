@@ -8,6 +8,17 @@ const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 8453);
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? 'https://base-mainnet.public.blastapi.io';
 const REFERRER = process.env.NEXT_PUBLIC_REFERRER_ADDRESS;
 
+// Route the SDK's order-book reads (client.api.fetchOrders / getMarketData)
+// through our own same-origin proxy instead of the MM worker directly. The
+// worker CORS-allowlists only specific origins, so a direct browser fetch is
+// blocked on our deployed domains; the proxy makes it a same-origin request.
+// Relative on purpose — resolves against whatever origin serves the app
+// (localhost, *.vercel.app, polynuts.xyz) with zero per-domain config. These
+// clients are browser-only ('use client'), so the relative URL is only ever
+// resolved in the browser.
+// See src/app/api/orderbook/[[...path]]/route.ts.
+const ORDERBOOK_PROXY_URL = '/api/orderbook';
+
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 const REFERRER_MISSING = !REFERRER || REFERRER.toLowerCase() === ZERO_ADDR;
 
@@ -42,6 +53,7 @@ export function getReadClient(): ThetanutsClient {
     chainId: CHAIN_ID as 8453,
     provider,
     referrer: REFERRER,
+    apiBaseUrl: ORDERBOOK_PROXY_URL,
     logger: polynutsLogger,
   });
   return _readClient;
@@ -53,6 +65,7 @@ export function createSignerClient(signer: ethers.Signer): ThetanutsClient {
     provider: signer.provider!,
     signer,
     referrer: REFERRER,
+    apiBaseUrl: ORDERBOOK_PROXY_URL,
     logger: polynutsLogger,
   });
 }
