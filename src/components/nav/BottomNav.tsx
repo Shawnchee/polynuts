@@ -2,14 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { TrendingUp, Wallet, Trophy, Activity } from 'lucide-react';
+import { TrendingUp, Wallet, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const tabs = [
   { href: '/markets', label: 'Markets', Icon: TrendingUp },
   { href: '/portfolio', label: 'Portfolio', Icon: Wallet },
   { href: '/leaderboard', label: 'Leaderboard', Icon: Trophy },
-  { href: '/activity', label: 'Activity', Icon: Activity },
 ];
 
 // Mobile-only bottom tab bar. The inline nav in TopNav overflowed a 375px

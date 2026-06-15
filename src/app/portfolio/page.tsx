@@ -10,6 +10,7 @@ import { PnlPill } from '@/components/portfolio/PnlPill';
 import { TableSkeleton } from '@/components/portfolio/TableSkeleton';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { usePositions } from '@/lib/sdk/usePortfolio';
+import { TradeHistory } from '@/components/portfolio/TradeHistory';
 import { getReadClient } from '@/lib/sdk/clients';
 import {
   costBasisUsd,
@@ -38,14 +39,9 @@ export default function PortfolioPage() {
   return (
     <PageShell active="/portfolio">
       <div className="flex flex-col gap-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-bold text-text">Portfolio</h1>
-            <p className="num mt-1 text-sm text-text-muted">{shortAddress(address ?? '')}</p>
-          </div>
-          <Link href="/activity" className="text-xs text-text-muted hover:text-text">
-            View history →
-          </Link>
+        <div>
+          <h1 className="text-xl font-bold text-text">Portfolio</h1>
+          <p className="num mt-1 text-sm text-text-muted">{shortAddress(address ?? '')}</p>
         </div>
 
         <CurrentBar current={current} loading={posLoading} />
@@ -59,6 +55,10 @@ export default function PortfolioPage() {
         >
           {openPositions.length > 0 && <PositionsTable rows={openPositions} />}
         </Section>
+
+        {/* Settled outcomes, lifetime PnL, win rate and the PnL calendar — the
+            former /activity page, now stacked under live positions. */}
+        <TradeHistory />
       </div>
     </PageShell>
   );

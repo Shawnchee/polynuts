@@ -12,7 +12,6 @@ const tabs = [
   { href: '/markets', label: 'Markets' },
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/leaderboard', label: 'Leaderboard' },
-  { href: '/activity', label: 'Activity' },
 ];
 
 export function TopNav({ active = '/' }: { active?: string }) {
