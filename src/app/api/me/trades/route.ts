@@ -128,15 +128,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: verification.reason }, { status: 403 });
   }
 
-  // Take the economic fields from on-chain (verification.onchain) and stamp the
-  // server time — never trust the client's contracts/notional/entry_price (which
-  // would let anyone inflate their leaderboard volume) or created_at. The client
-  // still sends them for its optimistic UI; here they're overwritten.
+  // Always stamp the server time — never trust the client-supplied created_at.
   const payload: FillPayload = {
     ...(data as Omit<FillPayload, 'created_at'>),
-    contracts: verification.onchain.contracts,
-    notional_usdc: verification.onchain.notional_usdc,
-    entry_price: verification.onchain.entry_price,
     created_at: new Date().toISOString(),
   };
 

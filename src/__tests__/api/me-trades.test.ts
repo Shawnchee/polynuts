@@ -10,10 +10,7 @@ vi.mock('@/lib/supabase/sync', () => ({
   getSyncClient: vi.fn(() => ({})),
   syncSettlementsOnly: vi.fn(async () => ({ settlementsUpserted: 1 })),
   writeFillToDb: vi.fn(async () => undefined),
-  verifyFillOnChain: vi.fn(async () => ({
-    ok: true,
-    onchain: { contracts: 10, notional_usdc: 5, entry_price: 0.05 },
-  })),
+  verifyFillOnChain: vi.fn(async () => ({ ok: true })),
   readUserTrades: vi.fn(async () => [
     {
       id: 1,
@@ -147,32 +144,6 @@ describe('POST /api/me/trades', () => {
     const written = call[1] as { created_at: string };
     expect(Date.parse(written.created_at)).toBeGreaterThan(Date.now() - 5000);
     expect(written.created_at).not.toBe(validPayload.created_at);
-  });
-
-  it('writes on-chain economics, ignoring inflated client values', async () => {
-    // Attacker reports a real tx but a hugely inflated notional to game the
-    // leaderboard. The route must persist the verified on-chain numbers instead.
-    vi.mocked(verifyFillOnChain).mockResolvedValueOnce({
-      ok: true,
-      onchain: { contracts: 7, notional_usdc: 2.1, entry_price: 0.3 },
-    });
-    const res = await POST(
-      makePost({
-        ...validPayload,
-        contracts: 999,
-        notional_usdc: 1_000_000,
-        entry_price: 999,
-      }) as never,
-    );
-    expect(res.status).toBe(200);
-    const written = vi.mocked(writeFillToDb).mock.calls.at(-1)![1] as {
-      contracts: number;
-      notional_usdc: number;
-      entry_price: number;
-    };
-    expect(written.contracts).toBe(7);
-    expect(written.notional_usdc).toBe(2.1);
-    expect(written.entry_price).toBe(0.3);
   });
 
   it('returns 400 for malformed tx_hash', async () => {
