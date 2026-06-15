@@ -3,7 +3,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
-const WEEKS = 13;
+const WEEKS = 26;
 const DAYS = WEEKS * 7;
 const DAY_MS = 86_400_000;
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -44,50 +44,48 @@ export function PnlCalendar({ entries }: PnlCalendarProps) {
   const activeDays = useMemo(() => days.filter((d) => d.count > 0).length, [days]);
   const hasData = activeDays > 0;
 
-  const weeks = useMemo(() => {
-    const w: DayCell[][] = [];
-    for (let i = 0; i < WEEKS; i++) {
-      w.push(days.slice(i * 7, i * 7 + 7));
-    }
-    return w;
-  }, [days]);
-
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-bg-elev p-4 animate-fade-in">
+    <section className="overflow-hidden rounded-xl border border-line bg-bg-elev p-4 sm:p-5 animate-fade-in">
       <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h2 className="text-md font-semibold text-text">Realized PnL — last 13 weeks</h2>
+          <h2 className="text-md font-semibold text-text">Realized PnL — last {WEEKS} weeks</h2>
           <p className="mt-0.5 text-xs text-text-dim">
             {hasData
               ? `${activeDays} active ${activeDays === 1 ? 'day' : 'days'} · net ${fmtSigned(totalPnl)}`
-              : 'No settled trades in the last 13 weeks'}
+              : `No settled trades in the last ${WEEKS} weeks`}
           </p>
         </div>
         <Legend hasData={hasData} />
       </header>
 
-      <div className="scrollbar-thin overflow-x-auto">
-        <div className="flex gap-1.5">
-          <div className="flex shrink-0 flex-col justify-between pr-1 text-[9px] text-text-dim">
-            {DAY_LABELS.map((d, i) => (
-              <span
-                key={d}
-                className={cn('h-3 sm:h-3.5 leading-3', i % 2 === 1 ? 'opacity-100' : 'opacity-0')}
-                aria-hidden="true"
-              >
-                {d}
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-1">
-            {weeks.map((week, wi) => (
-              <div key={wi} className="flex flex-col gap-1">
-                {week.map((cell) => (
-                  <Cell key={cell.key} cell={cell} maxPos={maxPos} maxNeg={maxNeg} />
-                ))}
-              </div>
-            ))}
-          </div>
+      <div className="flex gap-1.5 sm:gap-2">
+        {/* Weekday labels — a 7-row grid that stretches to align with the heatmap rows. */}
+        <div
+          className="grid shrink-0 gap-1 pr-1 text-[9px] text-text-dim sm:gap-1.5"
+          style={{ gridTemplateRows: 'repeat(7, minmax(0, 1fr))' }}
+          aria-hidden="true"
+        >
+          {DAY_LABELS.map((d, i) => (
+            <span
+              key={d}
+              className={cn('flex items-center leading-none', i % 2 === 1 ? 'opacity-100' : 'opacity-0')}
+            >
+              {d}
+            </span>
+          ))}
+        </div>
+        {/* Heatmap fills the full available width; square cells scale with it. */}
+        <div
+          className="grid flex-1 gap-1 sm:gap-1.5"
+          style={{
+            gridTemplateColumns: `repeat(${WEEKS}, minmax(0, 1fr))`,
+            gridTemplateRows: 'repeat(7, auto)',
+            gridAutoFlow: 'column',
+          }}
+        >
+          {days.map((cell) => (
+            <Cell key={cell.key} cell={cell} maxPos={maxPos} maxNeg={maxNeg} />
+          ))}
         </div>
       </div>
     </section>
@@ -135,7 +133,7 @@ function Cell({
         onBlur={() => setOpen(false)}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'h-3 w-3 sm:h-3.5 sm:w-3.5 rounded-[3px] border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+          'aspect-square w-full rounded-[4px] border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
           cls,
         )}
       />
