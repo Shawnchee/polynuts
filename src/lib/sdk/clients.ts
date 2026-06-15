@@ -19,6 +19,23 @@ const REFERRER = process.env.NEXT_PUBLIC_REFERRER_ADDRESS;
 // See src/app/api/orderbook/[[...path]]/route.ts.
 const ORDERBOOK_PROXY_URL = '/api/orderbook';
 
+// The indexer (user positions/history + protocol/daily stats) is CORS-
+// allowlisted exactly like the worker and is ALSO read from the browser, so it
+// needs the same same-origin proxy — otherwise these reads break on every
+// deployed domain (they only work in local dev because the indexer allowlists
+// localhost). Unlike ORDERBOOK_PROXY_URL these must be ABSOLUTE: the SDK shares
+// one axios instance with `baseURL: apiBaseUrl` (the order-book proxy), and it
+// only ignores that baseURL for absolute request URLs — a relative indexer path
+// would get mangled into /api/orderbook/api/indexer/... Browser-only
+// ('use client'), so window.location.origin is defined when a client is built.
+// See src/app/api/indexer/[[...path]]/route.ts.
+const ORIGIN = typeof window !== 'undefined' ? window.location.origin : '';
+// stateApiUrl backs *FromRfq + book-stats reads; indexerApiUrl backs the
+// /api/v1/book user positions/history reads. Both upstream to the same indexer
+// host, so a single proxy at /api/indexer forwards either path prefix.
+const INDEXER_STATE_PROXY_URL = `${ORIGIN}/api/indexer`;
+const INDEXER_BOOK_PROXY_URL = `${ORIGIN}/api/indexer/api/v1/book`;
+
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 const REFERRER_MISSING = !REFERRER || REFERRER.toLowerCase() === ZERO_ADDR;
 
@@ -54,6 +71,8 @@ export function getReadClient(): ThetanutsClient {
     provider,
     referrer: REFERRER,
     apiBaseUrl: ORDERBOOK_PROXY_URL,
+    stateApiUrl: INDEXER_STATE_PROXY_URL,
+    indexerApiUrl: INDEXER_BOOK_PROXY_URL,
     logger: polynutsLogger,
   });
   return _readClient;
@@ -66,6 +85,8 @@ export function createSignerClient(signer: ethers.Signer): ThetanutsClient {
     signer,
     referrer: REFERRER,
     apiBaseUrl: ORDERBOOK_PROXY_URL,
+    stateApiUrl: INDEXER_STATE_PROXY_URL,
+    indexerApiUrl: INDEXER_BOOK_PROXY_URL,
     logger: polynutsLogger,
   });
 }
