@@ -1,7 +1,7 @@
 import 'server-only';
 import {
   ThetanutsClient,
-  OPTION_BOOK_ABI,
+  type OrderFillEvent,
   type Position,
   type TradeHistory,
 } from '@thetanuts-finance/thetanuts-client';
@@ -23,52 +23,66 @@ export function getSyncClient(): ThetanutsClient {
   });
 }
 
-const OPTION_BOOK_IFACE = new ethers.Interface(OPTION_BOOK_ABI as ethers.InterfaceAbi);
-
 /**
- * Verify that a tx_hash is a real, mined OrderFilled transaction whose buyer
- * matches the claimed taker_address. Used by POST /api/me/trades to prevent
- * anyone from writing fake trade records for wallets they don't control.
- *
- * OrderFilled event args: (nonce, buyer, seller, optionAddress, ...)
+ * Verify that a tx_hash is a real, mined OrderFilled transaction whose taker
+ * matches the claimed taker_address and option, and return the authoritative
+ * on-chain economics (contracts / price / notional). Used by POST
+ * /api/me/trades to prevent anyone from writing fake trade records — or
+ * inflated leaderboard volume/PnL — for wallets they don't control.
  */
 export async function verifyFillOnChain(
   client: ThetanutsClient,
   txHash: string,
   takerAddress: string,
   optionId: string,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<
+  | { ok: true; onchain: { contracts: number; notional_usdc: number; entry_price: number } }
+  | { ok: false; reason: string }
+> {
   const receipt = await client.provider.getTransactionReceipt(txHash);
   if (!receipt) return { ok: false, reason: 'transaction not found on chain' };
 
   const taker = takerAddress.toLowerCase();
 
-  // The wallet that sent the transaction must be the claimed taker.
+  // The wallet that sent the transaction must be the claimed taker — this stops
+  // anyone pointing at someone else's fill tx and claiming it as their own.
   if (receipt.from.toLowerCase() !== taker) {
     return { ok: false, reason: 'tx sender does not match taker_address' };
   }
 
-  // Find the OrderFilled log and verify the option address.
-  for (const log of receipt.logs) {
-    try {
-      const parsed = OPTION_BOOK_IFACE.parseLog({ topics: [...log.topics], data: log.data });
-      if (parsed?.name !== 'OrderFilled') continue;
-
-      // args: (nonce, buyer, seller, optionAddress, ...)
-      const buyer = (parsed.args[1] as string).toLowerCase();
-      const optionAddress = (parsed.args[3] as string).toLowerCase();
-
-      if (buyer !== taker) {
-        return { ok: false, reason: 'buyer in OrderFilled event does not match taker_address' };
-      }
-      if (optionAddress !== optionId.toLowerCase()) {
-        return { ok: false, reason: 'optionAddress in OrderFilled event does not match option_id' };
-      }
-      return { ok: true };
-    } catch { /* skip logs from other contracts */ }
+  // Read the SDK-enriched OrderFilled event for this exact block. The raw log
+  // only carries premiumAmount (in the option's quote token, whose decimals
+  // vary by market), so we use the enriched numContracts/price the same way the
+  // cron recovery path does — and derive the economic fields server-side rather
+  // than trusting the client, which would otherwise let anyone inflate volume.
+  let fills: OrderFillEvent[];
+  try {
+    fills = await client.events.getOrderFillEvents({
+      fromBlock: receipt.blockNumber,
+      toBlock: receipt.blockNumber,
+    });
+  } catch (e) {
+    return { ok: false, reason: `could not read fill events: ${(e as Error).message}` };
   }
 
-  return { ok: false, reason: 'no matching OrderFilled event in transaction' };
+  const match = fills.find(
+    (f) =>
+      f.transactionHash.toLowerCase() === txHash.toLowerCase() &&
+      f.taker.toLowerCase() === taker &&
+      f.option.toLowerCase() === optionId.toLowerCase(),
+  );
+  if (!match) {
+    return { ok: false, reason: 'no matching OrderFilled event for taker/option in transaction' };
+  }
+
+  // Same derivation as the cron recovery path — keep the two write paths
+  // identical so write-on-fill and recovery never disagree on the numbers.
+  const contracts = Number(match.numContracts) / 1e6;
+  const entry_price = Number(match.price) / 1e8;
+  return {
+    ok: true,
+    onchain: { contracts, entry_price, notional_usdc: contracts * entry_price },
+  };
 }
 
 export function bigintToNumber(value: bigint, decimals: number): number {
