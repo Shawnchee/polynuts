@@ -1,5 +1,6 @@
 import type { Position, TradeHistory } from '@thetanuts-finance/thetanuts-client';
 import { getReadClient } from './clients';
+import { getDirectionFromImpl } from './markets';
 
 const PRICE_DECIMALS = 8;
 const USD_FIELD_DECIMALS = 8; // Position.pnlUsd, pnlEntries[].costUsd / valueUsd are encoded as 8-dec strings
@@ -54,6 +55,161 @@ export function costBasisUsd(p: Position): number {
 
 export function hasFinitePnl(p: Position): boolean {
   return Number.isFinite(pnlUsd(p));
+}
+
+/**
+ * Is this position a call-direction (PUMP) product? Returns:
+ *   true  → call family (PUMP)
+ *   false → put family (DUMP)
+ *   null  → range / unknown (the 1–2 strike directional payout helper
+ *           doesn't apply; callers compute range marks by decomposition)
+ *
+ * Prefers the indexer's `implementationName`; falls back to the raw option
+ * type (0/3 → call, 1/4 → put, 2/5 → range) — the same mapping as
+ * sideFromOptionType in supabase/sync.ts.
+ */
+function isCallFamily(p: Position): boolean | null {
+  const impl = p.implementationName;
+  const dir = impl ? getDirectionFromImpl(impl) : null;
+  if (dir === 'PUMP') return true;
+  if (dir === 'DUMP') return false;
+  if (dir === 'RANGE') return null;
+  const t = p.optionTypeRaw ?? p.option.optionType;
+  if (t === 0 || t === 3) return true;
+  if (t === 1 || t === 4) return false;
+  return null;
+}
+
+/**
+ * Intrinsic payout (6-dec USDC) of a structured product at a settlement
+ * price, computed entirely through the SDK's call-spread primitive so the
+ * decimal scaling is the SDK's, not ours. Shared by the live position mark
+ * and the confirm modal's "settle now" value so they never disagree.
+ *
+ * `strikesAsc` must be ascending (the helper's spread convention is
+ * [lower, upper]); `sizeContracts` is in OPTION_SIZE (18) decimals;
+ * `settlePrice8` is the settlement price in 8 decimals.
+ *
+ *   1–2 strikes → direct call/put (+spread) via `isCall`
+ *   3 strikes   → callSpread(lo,mid) − callSpread(mid,hi)   (butterfly)
+ *   4+ strikes  → callSpread(s0,s1) − callSpread(s2,s3)     (condor/ranger)
+ *
+ * Flies and condors/rangers have a direction-agnostic payoff (they pay in
+ * the middle band), so the call-spread decomposition is correct for both
+ * call- and put-framed variants. It is exact for EQUIDISTANT wings, which
+ * is the only shape Thetanuts mints (the factory validators enforce equal
+ * spread widths); asymmetric strikes can't occur for a real product.
+ * Returns null when inputs are malformed.
+ */
+export function intrinsicPayoutUsdc(
+  strikesAsc: bigint[],
+  isCall: boolean | null,
+  sizeContracts: bigint,
+  settlePrice8: bigint,
+): bigint | null {
+  if (sizeContracts <= 0n || strikesAsc.length === 0) return null;
+  const client = getReadClient();
+  const cs = (lo: bigint, hi: bigint): bigint =>
+    client.utils.calculatePayoutAtPrice(
+      { optionType: 0, strikes: [lo, hi] },
+      sizeContracts,
+      settlePrice8,
+    );
+  try {
+    let payout: bigint;
+    if (strikesAsc.length <= 2) {
+      if (isCall == null) return null;
+      payout = client.utils.calculatePayoutAtPrice(
+        { optionType: isCall ? 0 : 1, strikes: strikesAsc },
+        sizeContracts,
+        settlePrice8,
+      );
+    } else if (strikesAsc.length === 3) {
+      payout = cs(strikesAsc[0], strikesAsc[1]) - cs(strikesAsc[1], strikesAsc[2]);
+    } else {
+      payout = cs(strikesAsc[0], strikesAsc[1]) - cs(strikesAsc[2], strikesAsc[3]);
+    }
+    return payout < 0n ? 0n : payout;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Live intrinsic mark of an OPEN position in USD — the payout it would
+ * realise if the underlying settled at `spot` right now.
+ *
+ * The Thetanuts indexer does NOT mark open positions to market (its
+ * `pnlUsd` is computed only at settlement, so it reads 0 while a position
+ * is live). We reconstruct the intrinsic value entirely through the SDK's
+ * pure-JS `calculatePayoutAtPrice` primitive — no homegrown decimal
+ * scaling:
+ *
+ *   1 strike  (vanilla call/put)   → direct call/put payout
+ *   2 strikes (call/put spread)    → direct spread payout
+ *   3 strikes (butterfly)          → callSpread(lo,mid) − callSpread(mid,hi)
+ *   4 strikes (condor / ranger)    → callSpread(s0,s1) − callSpread(s2,s3)
+ *
+ * Butterflies and condors/rangers have a direction-agnostic payoff shape
+ * (they pay when price lands in the middle band), so the call-spread
+ * decomposition is correct for both their call- and put-framed variants.
+ * The SDK helper expects ascending strikes for spreads, which is what we
+ * pass.
+ *
+ * Returns NaN when `spot` is unavailable or the inputs are malformed — the
+ * caller then shows the premium-at-risk rather than a fabricated number.
+ */
+export function markToMarketUsd(p: Position, spot: number | undefined): number {
+  if (typeof spot !== 'number' || !Number.isFinite(spot) || spot <= 0) return NaN;
+  // Only USDC-collateralised products (6-dec) settle in USDC, which is what
+  // calculatePayoutAtPrice's default decimals assume. Inverse-collateral
+  // vanilla calls (BTC/ETH collateral) would mark in the underlying, not
+  // dollars — skip them rather than show a wrong number. Polynuts'
+  // spreads/condors/rangers are all USDC-collateralised, so this only
+  // excludes a minority vanilla case.
+  if ((p.collateralDecimals || 6) !== 6) return NaN;
+  const client = getReadClient();
+  // calculatePayoutAtPrice expects numContracts in OPTION_SIZE (18) decimals
+  // — verified against the SDK: 1e18 contracts on a $50 spread → $50. The
+  // indexer's `amount` (like previewFillOrder's numContracts) is in the
+  // 6-dec collateral scale, so scale it up by 10^(18−6) before marking.
+  const contracts = p.amount * 10n ** BigInt(18 - (p.collateralDecimals || 6));
+  if (contracts <= 0n) return NaN;
+
+  const strikes = [...p.option.strikes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+  let settle: bigint;
+  try {
+    settle = client.utils.toPriceDecimals(spot);
+  } catch {
+    return NaN;
+  }
+
+  const payout = intrinsicPayoutUsdc(strikes, isCallFamily(p), contracts, settle);
+  if (payout == null) return NaN;
+  const v = Number(client.utils.fromUsdcDecimals(payout));
+  return Number.isFinite(v) ? v : NaN;
+}
+
+/**
+ * Live unrealized PnL of an OPEN position: what it's worth if settled at
+ * the current `spot` minus the premium actually paid.
+ *
+ *   - out-of-the-money now → intrinsic ≈ 0 → PnL ≈ −premium
+ *   - in-the-money now     → intrinsic rises → PnL improves toward max win
+ *
+ * `premiumPaid` must be the real USDC premium (from our own DB), NOT the
+ * indexer's `entryPrice` (an mmPrice ~0.005, not the cash paid). Returns
+ * NaN when the position can't be marked (no live spot, etc.).
+ */
+export function unrealizedPnlUsd(
+  p: Position,
+  spot: number | undefined,
+  premiumPaid: number,
+): number {
+  const mark = markToMarketUsd(p, spot);
+  if (!Number.isFinite(mark) || !Number.isFinite(premiumPaid)) return NaN;
+  return mark - premiumPaid;
 }
 
 /**
