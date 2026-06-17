@@ -100,7 +100,7 @@ function PriceTicker({ symbol }: { symbol: 'ETH' | 'BTC' }) {
       <div className="label text-text-dim">{symbol}</div>
       <div className="num mt-0.5 text-md font-bold tabular-nums text-text">
         {typeof price === 'number' && Number.isFinite(price)
-          ? `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+          ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
           : (
             <span
               aria-label={`${symbol} price loading`}
