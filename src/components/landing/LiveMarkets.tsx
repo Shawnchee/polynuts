@@ -135,7 +135,10 @@ export function LiveMarkets() {
             return (
               <Link
                 key={m.id}
-                href="/markets"
+                // Deep-link to the specific market so clicking a row opens
+                // that trade in the panel, not the generic markets page.
+                // MarketsPage reads ?m=<id> on load and pre-selects it.
+                href={`/markets?m=${encodeURIComponent(m.id)}`}
                 className={`grid ${COLS} items-center gap-3 border-b border-white/[0.04] px-5 py-4 transition-colors last:border-b-0 hover:bg-white/[0.03]`}
               >
                 {/* Market */}

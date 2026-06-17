@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { TopNav } from '@/components/nav/TopNav';
 import { BottomNav } from '@/components/nav/BottomNav';
@@ -39,6 +39,35 @@ export default function MarketsPage() {
   const setExpiryFilter = useAppStore((s) => s.setExpiryFilter);
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
+
+  // Deep-link selection — the landing "Trade these right now" rows link to
+  // /markets?m=<marketId>. Apply it once the order book has loaded so the
+  // clicked market opens straight in the trade panel. Guarded by a ref so a
+  // background refetch never re-snaps the user back to the deep-linked market
+  // after they've picked something else.
+  const deepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (deepLinkApplied.current || markets.length === 0) return;
+    if (typeof window === 'undefined') return;
+    const wanted = new URLSearchParams(window.location.search).get('m');
+    if (!wanted) {
+      deepLinkApplied.current = true;
+      return;
+    }
+    const hit = markets.find((m) => m.id === wanted);
+    if (hit) {
+      selectMarket(hit.id);
+      deepLinkApplied.current = true;
+      // On mobile the trade panel renders below the grid — bring it into
+      // view so the deep-link visibly "does something". Deferred a frame so
+      // the panel has rendered the selected market first.
+      requestAnimationFrame(() => {
+        document
+          .getElementById('trade-panel')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, [markets, selectMarket]);
 
   // Real expiry buckets, derived from the live order book.
   const expiryGroups = useMemo(() => buildExpiryGroups(markets), [markets]);
@@ -190,7 +219,7 @@ export default function MarketsPage() {
             )}
           </section>
 
-          <div className="flex w-full shrink-0 flex-col gap-6 lg:w-[320px]">
+          <div id="trade-panel" className="flex w-full shrink-0 flex-col gap-6 lg:w-[320px]">
             <div className="lg:sticky lg:top-20">
               <TradePanel market={selectedMarket} isLoading={isLoading} />
             </div>
