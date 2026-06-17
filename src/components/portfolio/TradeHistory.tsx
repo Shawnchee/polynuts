@@ -2,12 +2,14 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { ExternalLink } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { Position, TradeHistory as TradeHistoryEntry } from '@thetanuts-finance/thetanuts-client';
-import { useAppStore, type ActivityItem } from '@/store/app';
 import { usePositions, useTradeHistory } from '@/lib/sdk/usePortfolio';
+import { usePositionMarks, type PositionMark } from '@/lib/sdk/usePositionMark';
 import { getReadClient } from '@/lib/sdk/clients';
+import { normTx, txUrl } from '@/lib/sdk/explorer';
 import { PnlPill } from '@/components/portfolio/PnlPill';
 import { TableSkeleton } from '@/components/portfolio/TableSkeleton';
 import { PnlCalendar } from '@/components/activity/PnlCalendar';
@@ -16,7 +18,6 @@ import {
   costBasisHistoryUsd,
   isBuyerSettle,
   isOpen,
-  pnlPct,
   pnlUsd,
   realizedPnlUsd,
   type ActivitySummary,
@@ -43,10 +44,9 @@ const filters: { id: ActivityFilter; label: string }[] = [
 interface MergedRow {
   key: string;
   ts: number;
-  source: 'position' | 'history' | 'local';
+  source: 'position' | 'history';
   position?: Position;
   history?: TradeHistoryEntry;
-  local?: ActivityItem;
   label: string;
   asset: string;
   direction?: Direction;
@@ -66,12 +66,12 @@ interface MergedRow {
 // which now just redirects here.)
 export function TradeHistory() {
   const { address, isConnected } = useAccount();
-  const localActivity = useAppStore((s) => s.activity);
   const useDb = dbBacked();
 
   const { data: positions = [], isLoading: posLoading } = usePositions();
   const { data: indexerHistory = [], isLoading: indexerHistLoading } = useTradeHistory();
   const { data: dbRows = [], isLoading: dbLoading } = useTradeHistoryDb();
+  const markOf = usePositionMarks();
 
   const [filter, setFilter] = useState<ActivityFilter>('all');
 
@@ -88,9 +88,9 @@ export function TradeHistory() {
   const merged = useMemo(
     () =>
       useDb
-        ? mergeRowsDb(positions, dbRows, localActivity)
-        : mergeRows(positions, indexerHistory, localActivity, address),
-    [useDb, positions, dbRows, indexerHistory, localActivity, address],
+        ? mergeRowsDb(positions, dbRows)
+        : mergeRows(positions, indexerHistory, address),
+    [useDb, positions, dbRows, indexerHistory, address],
   );
 
   const calendarEntries = useMemo<PnlEntry[]>(() => {
@@ -114,14 +114,14 @@ export function TradeHistory() {
       return merged.filter((r) => {
         if (r.realizedPnl != null) return r.realizedPnl > 0;
         if (r.position) {
-          const v = pnlUsd(r.position);
+          const v = markOf(r.position).unrealizedUsd;
           return Number.isFinite(v) && v > 0;
         }
         return false;
       });
     }
     return merged.filter((r) => r.direction === filter);
-  }, [merged, filter]);
+  }, [merged, filter, markOf]);
 
   const loading =
     isConnected && (posLoading || (useDb ? dbLoading : indexerHistLoading));
@@ -177,7 +177,7 @@ export function TradeHistory() {
         ) : rows.length === 0 ? (
           <EmptyState connected={isConnected} />
         ) : (
-          <ActivityTable rows={rows} />
+          <ActivityTable rows={rows} markOf={markOf} />
         )}
       </section>
     </div>
@@ -312,7 +312,13 @@ function EmptyState({ connected }: { connected: boolean }) {
   );
 }
 
-function ActivityTable({ rows }: { rows: MergedRow[] }) {
+function ActivityTable({
+  rows,
+  markOf,
+}: {
+  rows: MergedRow[];
+  markOf: (p: Position) => PositionMark;
+}) {
   return (
     <div className="scrollbar-thin overflow-x-auto">
       <table className="w-full text-sm">
@@ -332,7 +338,20 @@ function ActivityTable({ rows }: { rows: MergedRow[] }) {
           {rows.map((r) => (
             <tr key={r.key} className="transition-colors hover:bg-surface-hover">
               <Td>
-                <span className="num text-text-muted">{ago(r.ts)}</span>
+                {txUrl(r.txHash) ? (
+                  <a
+                    href={txUrl(r.txHash)!}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="View transaction on Basescan"
+                    className="num inline-flex items-center gap-1 text-text-muted transition-colors hover:text-text"
+                  >
+                    {ago(r.ts)}
+                    <ExternalLink aria-hidden className="h-3 w-3 opacity-70" />
+                  </a>
+                ) : (
+                  <span className="num text-text-muted">{ago(r.ts)}</span>
+                )}
               </Td>
               <Td>
                 <span className="font-medium text-text">{r.label}</span>
@@ -373,7 +392,7 @@ function ActivityTable({ rows }: { rows: MergedRow[] }) {
               </Td>
               <Td align="right">
                 {r.position ? (
-                  <LivePnlCell position={r.position} />
+                  <LivePnlCell position={r.position} markOf={markOf} />
                 ) : r.realizedPnl != null && Number.isFinite(r.realizedPnl) ? (
                   <PnlPill amount={r.realizedPnl} />
                 ) : (
@@ -391,12 +410,20 @@ function ActivityTable({ rows }: { rows: MergedRow[] }) {
   );
 }
 
-function LivePnlCell({ position }: { position: Position }) {
-  const asset = position.option.underlying.toUpperCase() as 'ETH' | 'BTC';
-  useAppStore((s) => (asset === 'ETH' ? s.prices.ETH : asset === 'BTC' ? s.prices.BTC : undefined));
-  const pnl = pnlUsd(position);
-  if (!Number.isFinite(pnl)) return <span className="text-text-dim">—</span>;
-  return <PnlPill amount={pnl} percent={pnlPct(position)} />;
+function LivePnlCell({
+  position,
+  markOf,
+}: {
+  position: Position;
+  markOf: (p: Position) => PositionMark;
+}) {
+  // markOf() reads the live spot feed via usePositionMarks at the parent, so
+  // this cell re-renders as the price ticks without its own subscription.
+  const mark = markOf(position);
+  if (!Number.isFinite(mark.unrealizedUsd)) {
+    return <span className="text-text-dim">—</span>;
+  }
+  return <PnlPill amount={mark.unrealizedUsd} percent={mark.unrealizedPct} />;
 }
 
 function StatusBadge({ row }: { row: MergedRow }) {
@@ -417,7 +444,6 @@ function StatusBadge({ row }: { row: MergedRow }) {
 function mergeRows(
   positions: Position[],
   history: TradeHistoryEntry[],
-  local: ActivityItem[],
   address?: string,
 ): MergedRow[] {
   const client = getReadClient();
@@ -427,7 +453,7 @@ function mergeRows(
   for (const p of positions) {
     if (!isOpen(p)) continue;
     if (!Number.isFinite(pnlUsd(p))) continue;
-    seenTx.add(p.entryTxHash);
+    seenTx.add(p.entryTxHash.toLowerCase());
     const contracts = safe(() =>
       Number(client.utils.formatAmount(p.amount, p.collateralDecimals || 6, 6))
     );
@@ -448,13 +474,14 @@ function mergeRows(
       contracts,
       usdc,
       entryPrice,
-      status: p.status || 'OPEN',
+      // Indexer open positions report status 'active'; normalize to 'OPEN'.
+      status: 'OPEN',
       txHash: p.entryTxHash,
     });
   }
 
   for (const h of history) {
-    if (seenTx.has(h.txHash) && h.type === 'fill') continue;
+    if (seenTx.has(h.txHash.toLowerCase()) && h.type === 'fill') continue;
     const dec = h.collateralDecimals || 6;
     const contracts = safe(() => Number(client.utils.formatAmount(h.amount, dec, 6)));
     const price = safe(() => Number(client.utils.fromPriceDecimals(h.price)));
@@ -491,47 +518,49 @@ function mergeRows(
     });
   }
 
-  for (const a of local) {
-    out.push({
-      key: `loc-${a.id}`,
-      ts: a.ts,
-      source: 'local',
-      local: a,
-      label: a.question ?? (`${a.asset ?? ''} ${a.direction ?? ''}`.trim() || a.kind),
-      asset: a.asset ?? '',
-      direction: a.direction,
-      status: a.kind.toUpperCase(),
-    });
-  }
-
   out.sort((a, b) => b.ts - a.ts);
   return out;
 }
 
 /**
  * Build merged rows when the trade history comes from our own Supabase
- * (sync-on-visit). Open positions still come from the indexer (live PnL).
- * Local optimistic activity is appended unchanged.
+ * (sync-on-visit). Open positions still come from the indexer (live PnL),
+ * but their cost basis / entry price is taken from the matching DB fill —
+ * the indexer's entryPrice is an mmPrice (probability-like ~0.005), not the
+ * real premium the user paid, so reading it directly shows a near-zero cost.
  */
 function mergeRowsDb(
   positions: Position[],
   dbRows: DbTradeRow[],
-  local: ActivityItem[],
 ): MergedRow[] {
   const client = getReadClient();
   const out: MergedRow[] = [];
   const seenTx = new Set<string>();
 
+  // Index DB fills by tx hash so an open position can borrow its real
+  // premium (notional) + per-contract entry price. normTx reconciles the
+  // indexer's prefix-less hash with our 0x-prefixed DB hash.
+  const dbByTx = new Map<string, DbTradeRow>();
+  for (const r of dbRows) dbByTx.set(normTx(r.tx_hash), r);
+
   for (const p of positions) {
     if (!isOpen(p)) continue;
     if (!Number.isFinite(pnlUsd(p))) continue;
-    seenTx.add(p.entryTxHash);
+    seenTx.add(normTx(p.entryTxHash));
     const contracts = safe(() =>
       Number(client.utils.formatAmount(p.amount, p.collateralDecimals || 6, 6)),
     );
-    const entryPrice = safe(() => Number(client.utils.fromPriceDecimals(p.entryPrice)));
+    const db = dbByTx.get(normTx(p.entryTxHash));
+    // Prefer the real premium from our DB; fall back to the (wrong but
+    // non-null) indexer entryPrice only when there's no matching fill.
+    const entryPrice =
+      db?.entry_price != null
+        ? db.entry_price
+        : safe(() => Number(client.utils.fromPriceDecimals(p.entryPrice)));
     const usdc =
-      contracts != null && entryPrice != null && Number.isFinite(contracts * entryPrice)
+      db?.notional_usdc != null && Number.isFinite(db.notional_usdc)
+        ? db.notional_usdc
+        : contracts != null && entryPrice != null && Number.isFinite(contracts * entryPrice)
         ? contracts * entryPrice
         : undefined;
     out.push({
@@ -546,7 +575,9 @@ function mergeRowsDb(
       contracts,
       usdc,
       entryPrice,
-      status: p.status || 'OPEN',
+      // Indexer open positions report status 'active'; normalize to 'OPEN'
+      // so the openCount filter + StatusBadge treat them as live (green).
+      status: 'OPEN',
       txHash: p.entryTxHash,
     });
   }
@@ -555,7 +586,7 @@ function mergeRowsDb(
     // Skip rows that are mirrored by an active position above (avoid dupes
     // for fills that haven't settled yet — the live position is more
     // useful since it has streaming PnL).
-    if (seenTx.has(r.tx_hash)) continue;
+    if (seenTx.has(normTx(r.tx_hash))) continue;
     const direction =
       r.side === 'PUMP' || r.side === 'DUMP' || r.side === 'RANGE'
         ? (r.side as Direction)
@@ -576,19 +607,6 @@ function mergeRowsDb(
       realizedPnl: r.pnl_usdc ?? undefined,
       status: settled ? 'SETTLE' : 'FILLED',
       txHash: r.tx_hash,
-    });
-  }
-
-  for (const a of local) {
-    out.push({
-      key: `loc-${a.id}`,
-      ts: a.ts,
-      source: 'local',
-      local: a,
-      label: a.question ?? (`${a.asset ?? ''} ${a.direction ?? ''}`.trim() || a.kind),
-      asset: a.asset ?? '',
-      direction: a.direction,
-      status: a.kind.toUpperCase(),
     });
   }
 

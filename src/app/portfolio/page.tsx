@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import Link from 'next/link';
+import { ExternalLink } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { Position } from '@thetanuts-finance/thetanuts-client';
@@ -10,23 +11,20 @@ import { PnlPill } from '@/components/portfolio/PnlPill';
 import { TableSkeleton } from '@/components/portfolio/TableSkeleton';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { usePositions } from '@/lib/sdk/usePortfolio';
+import { usePositionMarks, type PositionMark } from '@/lib/sdk/usePositionMark';
 import { TradeHistory } from '@/components/portfolio/TradeHistory';
 import { getReadClient } from '@/lib/sdk/clients';
-import {
-  costBasisUsd,
-  hasFinitePnl,
-  isOpen,
-  pnlPct,
-  pnlUsd,
-} from '@/lib/sdk/positionLogic';
+import { txUrl } from '@/lib/sdk/explorer';
+import { hasFinitePnl, isOpen } from '@/lib/sdk/positionLogic';
 import { fmtUsd, shortAddress } from '@/lib/utils';
 
 export default function PortfolioPage() {
   const { isConnected, address } = useAccount();
   const { data: positions = [], isLoading: posLoading } = usePositions();
+  const markOf = usePositionMarks();
 
   const openPositions = useMemo(() => positions.filter(isOpen).filter(hasFinitePnl), [positions]);
-  const current = useMemo(() => buildCurrent(openPositions), [openPositions]);
+  const current = useMemo(() => buildCurrent(openPositions, markOf), [openPositions, markOf]);
 
   if (!isConnected) {
     return (
@@ -53,7 +51,9 @@ export default function PortfolioPage() {
           empty={<EmptyPositions />}
           skeleton={<TableSkeleton cols={7} rows={3} />}
         >
-          {openPositions.length > 0 && <PositionsTable rows={openPositions} />}
+          {openPositions.length > 0 && (
+            <PositionsTable rows={openPositions} markOf={markOf} />
+          )}
         </Section>
 
         {/* Settled outcomes, lifetime PnL, win rate and the PnL calendar — the
@@ -83,18 +83,26 @@ interface Current {
   openCount: number;
   exposure: number;
   unrealizedPnl: number;
+  /** How many open positions we could mark to market this tick. */
+  markedCount: number;
 }
 
-function buildCurrent(positions: Position[]): Current {
+function buildCurrent(
+  positions: Position[],
+  markOf: (p: Position) => PositionMark,
+): Current {
   let exposure = 0;
   let unrealizedPnl = 0;
+  let markedCount = 0;
   for (const p of positions) {
-    const cost = costBasisUsd(p);
-    if (Number.isFinite(cost)) exposure += cost;
-    const pnl = pnlUsd(p);
-    if (Number.isFinite(pnl)) unrealizedPnl += pnl;
+    const m = markOf(p);
+    if (Number.isFinite(m.premiumUsd)) exposure += m.premiumUsd;
+    if (Number.isFinite(m.unrealizedUsd)) {
+      unrealizedPnl += m.unrealizedUsd;
+      markedCount++;
+    }
   }
-  return { openCount: positions.length, exposure, unrealizedPnl };
+  return { openCount: positions.length, exposure, unrealizedPnl, markedCount };
 }
 
 function CurrentBar({ current, loading }: { current: Current; loading: boolean }) {
@@ -116,11 +124,19 @@ function CurrentBar({ current, loading }: { current: Current; loading: boolean }
     {
       label: 'Unrealized PnL',
       value:
-        current.openCount > 0 ? (
+        current.markedCount > 0 ? (
           <PnlPill amount={current.unrealizedPnl} />
         ) : (
           <span className="text-text-dim">—</span>
         ),
+      sub:
+        current.openCount > 0 && current.markedCount < current.openCount
+          ? current.markedCount === 0
+            ? 'awaiting live price'
+            : `${current.markedCount} of ${current.openCount} marked`
+          : current.markedCount > 0
+          ? 'marked to live price'
+          : undefined,
     },
   ];
   return (
@@ -203,7 +219,13 @@ function EmptyPositions() {
   );
 }
 
-function PositionsTable({ rows }: { rows: Position[] }) {
+function PositionsTable({
+  rows,
+  markOf,
+}: {
+  rows: Position[];
+  markOf: (p: Position) => PositionMark;
+}) {
   const client = getReadClient();
   return (
     <div className="scrollbar-thin overflow-x-auto">
@@ -221,8 +243,7 @@ function PositionsTable({ rows }: { rows: Position[] }) {
         </thead>
         <tbody className="divide-y divide-line">
           {rows.map((p) => {
-            const pnl = pnlUsd(p);
-            const pct = pnlPct(p);
+            const mark = markOf(p);
             return (
               <tr key={p.id} className="transition-colors hover:bg-surface-hover">
                 <Td>
@@ -237,6 +258,17 @@ function PositionsTable({ rows }: { rows: Position[] }) {
                       )
                       .join(' / ')}
                   </span>
+                  {txUrl(p.entryTxHash) && (
+                    <a
+                      href={txUrl(p.entryTxHash)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="View entry transaction on Basescan"
+                      className="ml-1.5 inline-flex translate-y-px text-text-dim transition-colors hover:text-text"
+                    >
+                      <ExternalLink aria-hidden className="h-3 w-3" />
+                    </a>
+                  )}
                 </Td>
                 <Td>
                   <span
@@ -255,12 +287,12 @@ function PositionsTable({ rows }: { rows: Position[] }) {
                   ).toLocaleString('en-US', { maximumFractionDigits: 4 })}
                 </Td>
                 <Td align="right" mono>
-                  {fmtUsd(Number(client.utils.fromPriceDecimals(p.entryPrice)), {
-                    compact: true,
-                  })}
+                  {Number.isFinite(mark.entryPerContractUsd)
+                    ? fmtUsd(mark.entryPerContractUsd, { compact: true })
+                    : '—'}
                 </Td>
                 <Td align="right">
-                  <PnlPill amount={pnl} percent={pct} />
+                  <PnlPill amount={mark.unrealizedUsd} percent={mark.unrealizedPct} />
                 </Td>
                 <Td align="right">
                   <TimerBadge expirySec={p.option.expiry} />
