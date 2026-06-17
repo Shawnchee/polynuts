@@ -283,6 +283,11 @@ export function TradePanel({
     }
   }
 
+  const spotPrice = useAppStore((s) => {
+    const a = market?.asset;
+    return a === 'ETH' || a === 'BTC' ? s.prices[a] : undefined;
+  });
+
   if (!market) {
     if (isLoading) {
       return <TradePanelSkeleton />;
@@ -571,7 +576,14 @@ export function TradePanel({
           long is left on a market the moment they open it, not just the
           absolute close time buried in Trade details. */}
       <div className="mt-3 flex items-center justify-between rounded-md border border-line bg-bg-subtle px-3 py-2">
-        <span className="label text-text-dim">Closes in</span>
+        <div className="flex items-center gap-2">
+          <span className="label text-text-dim">Closes in</span>
+          {typeof spotPrice === 'number' && Number.isFinite(spotPrice) && (
+            <span className="num text-xs tabular-nums text-text-muted">
+              {market.asset} ${spotPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          )}
+        </div>
         <Countdown expirySec={market.expiry} className="text-sm" />
       </div>
 
