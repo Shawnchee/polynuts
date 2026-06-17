@@ -9,6 +9,7 @@ import type { Position, TradeHistory as TradeHistoryEntry } from '@thetanuts-fin
 import { usePositions, useTradeHistory } from '@/lib/sdk/usePortfolio';
 import { usePositionMarks, type PositionMark } from '@/lib/sdk/usePositionMark';
 import { getReadClient } from '@/lib/sdk/clients';
+import { getDirectionFromImpl } from '@/lib/sdk/markets';
 import { normTx, txUrl } from '@/lib/sdk/explorer';
 import { PnlPill } from '@/components/portfolio/PnlPill';
 import { TableSkeleton } from '@/components/portfolio/TableSkeleton';
@@ -469,7 +470,7 @@ function mergeRows(
       position: p,
       label: buildLabel(p.option.underlying, p.option.strikes, client),
       asset: p.option.underlying,
-      direction: directionOf(p.option.optionType, p.option.strikes.length),
+      direction: directionOfPosition(p),
       side: p.side,
       contracts,
       usdc,
@@ -570,7 +571,7 @@ function mergeRowsDb(
       position: p,
       label: buildLabel(p.option.underlying, p.option.strikes, client),
       asset: p.option.underlying,
-      direction: directionOf(p.option.optionType, p.option.strikes.length),
+      direction: directionOfPosition(p),
       side: p.side,
       contracts,
       usdc,
@@ -680,6 +681,21 @@ function directionOf(
   if (t === 1 || t === 4) return 'DUMP';
   if (t === 2 || t === 5) return 'RANGE';
   return undefined;
+}
+
+/**
+ * Direction of an OPEN position. The indexer's `option.optionType` is the
+ * base-leg type (call = 0) for multi-leg structures, so a put spread (DUMP)
+ * misreads as PUMP if you trust it. Prefer the implementation name
+ * (authoritative — e.g. PUT_SPREAD → DUMP), then the raw option type, then
+ * the structured type as a last resort. Mirrors `isCallFamily` in positionLogic.
+ */
+function directionOfPosition(p: Position): Direction | undefined {
+  if (p.implementationName) {
+    const d = getDirectionFromImpl(p.implementationName);
+    if (d) return d;
+  }
+  return directionOf(p.optionTypeRaw ?? p.option.optionType, p.option.strikes.length);
 }
 
 function safe<T>(fn: () => T): T | undefined {
