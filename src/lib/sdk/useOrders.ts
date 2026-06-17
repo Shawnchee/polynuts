@@ -5,16 +5,22 @@ import { useMemo } from 'react';
 import type { OrderWithSignature } from '@thetanuts-finance/thetanuts-client';
 import { getReadClient } from './clients';
 import { buildMarketView, type MarketView } from './markets';
+import { useAppStore } from '@/store/app';
 
 export function useOrders() {
   const client = getReadClient();
+  // Pause polling while the user is mid-trade so the book doesn't reshuffle
+  // (re-sort, rotate the featured hero, swap the selected market) while
+  // they're sizing or signing a bet. Resumes the instant the trade settles
+  // or is cancelled.
+  const tradeInProgress = useAppStore((s) => s.tradeInProgress);
   return useQuery<OrderWithSignature[]>({
     queryKey: ['orders'],
     queryFn: async () => {
       const orders = await client.api.fetchOrders();
       return orders;
     },
-    refetchInterval: 30_000,
+    refetchInterval: tradeInProgress ? false : 30_000,
   });
 }
 

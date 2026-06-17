@@ -33,6 +33,13 @@ interface AppStore {
   selectedMarketId: string | null;
   activity: ActivityItem[];
   prices: { ETH?: number; BTC?: number };
+  /**
+   * True while the user is mid-trade (confirm modal open, approving, or the
+   * fill is being signed/submitted). Order-book refetching is paused while
+   * this is set so the markets list, featured hero, and selected market
+   * don't reshuffle out from under someone who is halfway through a bet.
+   */
+  tradeInProgress: boolean;
 
   setFilter: (f: FilterTab) => void;
   setSort: (s: SortKey) => void;
@@ -40,6 +47,7 @@ interface AppStore {
   selectMarket: (id: string | null) => void;
   prependActivity: (item: ActivityItem) => void;
   setPrice: (asset: 'ETH' | 'BTC', price: number) => void;
+  setTradeInProgress: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -49,6 +57,7 @@ export const useAppStore = create<AppStore>((set) => ({
   selectedMarketId: null,
   activity: [],
   prices: {},
+  tradeInProgress: false,
 
   setFilter: (f) => set({ filter: f }),
   setSort: (s) => set({ sort: s }),
@@ -58,6 +67,7 @@ export const useAppStore = create<AppStore>((set) => ({
     set((s) => ({ activity: [item, ...s.activity].slice(0, 50) })),
   setPrice: (asset, price) =>
     set((s) => ({ prices: { ...s.prices, [asset]: price } })),
+  setTradeInProgress: (v) => set({ tradeInProgress: v }),
 }));
 
 export interface ExpiryGroup {

@@ -102,6 +102,9 @@ export function useLiveFeed() {
       }
       if (!pollTimer) {
         pollTimer = setInterval(() => {
+          // Don't yank the order book out from under someone mid-trade — the
+          // same pause that useOrders applies to its own refetchInterval.
+          if (useAppStore.getState().tradeInProgress) return;
           queryClient.invalidateQueries({ queryKey: ['orders'] });
         }, 30_000);
       }
