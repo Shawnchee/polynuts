@@ -49,7 +49,7 @@ export default function PortfolioPage() {
           count={openPositions.length}
           loading={posLoading}
           empty={<EmptyPositions />}
-          skeleton={<TableSkeleton cols={7} rows={3} />}
+          skeleton={<TableSkeleton cols={8} rows={3} />}
         >
           {openPositions.length > 0 && (
             <PositionsTable rows={openPositions} markOf={markOf} />
@@ -235,6 +235,7 @@ function PositionsTable({
             <Th>Position</Th>
             <Th>Side</Th>
             <Th align="right">Contracts</Th>
+            <Th align="right">Cost</Th>
             <Th align="right">Entry</Th>
             <Th align="right">PnL</Th>
             <Th align="right">Expires</Th>
@@ -285,6 +286,9 @@ function PositionsTable({
                   {Number(
                     client.utils.formatAmount(p.amount, p.collateralDecimals || 6, 4)
                   ).toLocaleString('en-US', { maximumFractionDigits: 4 })}
+                </Td>
+                <Td align="right" mono>
+                  {Number.isFinite(mark.premiumUsd) ? fmtUsd(mark.premiumUsd) : '—'}
                 </Td>
                 <Td align="right" mono>
                   {Number.isFinite(mark.entryPerContractUsd)
