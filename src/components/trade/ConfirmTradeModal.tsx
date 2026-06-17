@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { MarketView } from '@/lib/sdk/markets';
 import { getReadClient } from '@/lib/sdk/clients';
+import { intrinsicPayoutUsdc } from '@/lib/sdk/positionLogic';
 import { useAppStore } from '@/store/app';
 import { DirectionTag } from '@/components/ui/DirectionTag';
 import { cn } from '@/lib/utils';
@@ -151,31 +152,38 @@ export function ConfirmTradeModal({
 
   const isVanilla = market.family === 'vanilla';
 
+  // calculatePayoutAtPrice wants numContracts in OPTION_SIZE (18) decimals,
+  // but previewFillOrder hands back the 6-dec collateral scale — passing it
+  // raw silently computes ~0 (verified against the SDK). Scale up by 10^12
+  // so the projected payout and break-even below are real dollar figures.
+  const sizeContracts = useMemo(
+    () => (numContracts > 0n ? numContracts * 10n ** 12n : 0n),
+    [numContracts]
+  );
+
+  const isCallDir =
+    market.direction === 'PUMP' ? true : market.direction === 'DUMP' ? false : null;
+
   // Projected payout AT THE CURRENT SPOT — the "if it settled right now"
-  // value. Pure-JS SDK helper, fine to recompute every tick.
+  // value. Routed through the shared intrinsic helper (ascending strikes +
+  // call/put/spread/range decomposition) so it matches the portfolio's
+  // unrealized-PnL mark exactly. Pure JS, fine to recompute every tick.
   const projectedPayout = useMemo(() => {
-    if (!spot || !numContracts || numContracts <= 0n) return null;
+    if (!spot || sizeContracts <= 0n) return null;
     try {
       const settlement = client.utils.toPriceDecimals(spot);
-      return client.utils.calculatePayoutAtPrice(
-        {
-          optionType: market.order.order.optionType ?? 0,
-          strikes: market.strikesContract,
-        },
-        numContracts,
-        settlement
-      );
+      return intrinsicPayoutUsdc(market.strikesAsc, isCallDir, sizeContracts, settlement);
     } catch {
       return null;
     }
-  }, [client, spot, numContracts, market]);
+  }, [client, spot, sizeContracts, market, isCallDir]);
 
   // Break-even: settlement price at which projected payout exactly
   // equals the user's bet. For bounded structures we walk the strikes;
   // the SDK's projected-payout helper is linear-between-strikes, so a
   // single interpolation across the price band lands the right answer.
   const breakEven = useMemo(() => {
-    if (isVanilla || !numContracts || numContracts <= 0n) return null;
+    if (isVanilla || sizeContracts <= 0n) return null;
     try {
       const betUsdc = BigInt(Math.round(amount * 1_000_000));
       const lo = market.strikesAsc[0];
@@ -187,14 +195,8 @@ export function ConfirmTradeModal({
       let prev: { p: bigint; net: bigint } | null = null;
       for (let i = 0; i <= STEPS; i++) {
         const p = minP + ((maxP - minP) * BigInt(i)) / BigInt(STEPS);
-        const payout = client.utils.calculatePayoutAtPrice(
-          {
-            optionType: market.order.order.optionType ?? 0,
-            strikes: market.strikesContract,
-          },
-          numContracts,
-          p
-        );
+        const payout =
+          intrinsicPayoutUsdc(market.strikesAsc, isCallDir, sizeContracts, p) ?? 0n;
         const net = payout - betUsdc;
         if (prev) {
           const flip =
@@ -215,7 +217,7 @@ export function ConfirmTradeModal({
     } catch {
       return null;
     }
-  }, [client, amount, numContracts, market, isVanilla]);
+  }, [client, amount, sizeContracts, market, isVanilla, isCallDir]);
 
   const projectedPayoutUsd =
     projectedPayout != null

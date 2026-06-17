@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 import { toast } from 'sonner';
@@ -28,6 +28,7 @@ import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { useUsdcAllowance, MAX_UINT256 } from '@/lib/sdk/useUsdcAllowance';
 import { DirectionTag } from '@/components/ui/DirectionTag';
+import { Countdown } from '@/components/ui/Countdown';
 import { PayoutChart } from '@/components/trade/PayoutChart';
 import { TradingViewChart } from '@/components/trade/TradingViewChart';
 import {
@@ -37,7 +38,7 @@ import {
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, Loader2 } from 'lucide-react';
 
 type ChartTab = 'payout' | 'spot';
 
@@ -79,6 +80,7 @@ export function TradePanel({
   const { signerClient, signer, ready, notReadyReason } = useSignerClient();
   const { data: balance } = useUsdcBalance();
   const prependActivity = useAppStore((s) => s.prependActivity);
+  const setTradeInProgress = useAppStore((s) => s.setTradeInProgress);
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -138,6 +140,25 @@ export function TradePanel({
     return () => clearTimeout(id);
   }, [market, amount, readClient]);
 
+  // Flag the global store while a trade is mid-flight (confirm modal open,
+  // approving, or fill submitting) so order-book polling pauses and the
+  // markets list doesn't reshuffle underneath the user. Cleared on unmount.
+  const tradeActive = pendingTrade !== null || submitting || approving;
+  const prevTradeActive = useRef(false);
+  useEffect(() => {
+    setTradeInProgress(tradeActive);
+    // When the pause lifts (fill done, or modal cancelled / auto-cancelled),
+    // React Query won't refetch the paused ['orders'] query for up to 30s
+    // (re-arming the interval doesn't fetch immediately, and the same query
+    // key isn't treated as stale-on-activate). Kick a fresh book fetch so a
+    // just-consumed order drops out at once instead of lingering ~30s.
+    if (prevTradeActive.current && !tradeActive) {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    }
+    prevTradeActive.current = tradeActive;
+    return () => setTradeInProgress(false);
+  }, [tradeActive, setTradeInProgress, queryClient]);
+
   const insufficientBalance = useMemo(() => {
     if (!balance) return false;
     try {
@@ -158,6 +179,19 @@ export function TradePanel({
       return true;
     }
   }, [allowance, amount]);
+
+  // Amount-independent "is USDC usable for trading at all" signal — drives
+  // the persistent allowance control so the user can approve proactively
+  // before they've sized a bet. Treats "covers at least the minimum bet" as
+  // approved (a max-uint256 approval trivially clears this).
+  const approvedForTrading = useMemo(() => {
+    if (!allowance) return false;
+    try {
+      return allowance >= toBigInt(String(MIN_BET), 6);
+    } catch {
+      return false;
+    }
+  }, [allowance]);
 
   async function handleApprove() {
     if (!ready || !signerClient || !signer || !orderOptionBook) {
@@ -383,24 +417,47 @@ export function TradePanel({
             const label = `${trade.market.asset} ${trade.market.strikes
               .map((s) => `$${s.toLocaleString('en-US', { maximumFractionDigits: 0 })}`)
               .join(' / ')}`;
+            // Record the premium actually spent on-chain = contracts ×
+            // pricePerContract. When the maker cap clamps the fill, the SDK
+            // fills fewer contracts than the typed amount would buy, so
+            // trade.amount overstates the real cost. Deriving notional from
+            // the (post-cap) contracts keeps notional == contracts × entry
+            // in every case; in the uncapped case it equals the typed amount
+            // to sub-cent precision.
+            const contractsHuman = Number(fromBigInt(trade.numContracts, 6));
+            const pricePerContractUsd = Number(
+              fromBigInt(trade.market.pricePerContract, 8)
+            );
             const payload = {
               tx_hash: receipt.hash,
               option_id: optionId.toLowerCase(),
               taker_address: address.toLowerCase(),
               market_label: label,
               side: trade.market.direction,
-              contracts: Number(fromBigInt(trade.numContracts, 6)),
-              notional_usdc: trade.amount,
-              entry_price: Number(fromBigInt(trade.market.pricePerContract, 8)),
+              contracts: contractsHuman,
+              notional_usdc: contractsHuman * pricePerContractUsd,
+              entry_price: pricePerContractUsd,
               created_at: new Date().toISOString(),
             };
             fetch('/api/me/trades', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload),
-            }).catch((err) => {
-              console.warn('[polynuts] write-on-fill failed (non-critical)', err);
-            });
+            })
+              .then((res) => {
+                // Once the row is in the DB, refresh the portfolio history so
+                // the real fill appears immediately (no 30s wait) — this is
+                // what lets us drop the optimistic local row that used to
+                // double-up the table.
+                if (res.ok && address) {
+                  queryClient.invalidateQueries({
+                    queryKey: ['me-trades', address.toLowerCase()],
+                  });
+                }
+              })
+              .catch((err) => {
+                console.warn('[polynuts] write-on-fill failed (non-critical)', err);
+              });
           }
         } catch (err) {
           console.warn('[polynuts] receipt parse failed (non-critical)', err);
@@ -509,6 +566,14 @@ export function TradePanel({
       </div>
 
       <p className="mt-3 text-base font-medium leading-snug text-text">{market.question}</p>
+
+      {/* Live countdown to settlement — the user wanted to see exactly how
+          long is left on a market the moment they open it, not just the
+          absolute close time buried in Trade details. */}
+      <div className="mt-3 flex items-center justify-between rounded-md border border-line bg-bg-subtle px-3 py-2">
+        <span className="label text-text-dim">Closes in</span>
+        <Countdown expirySec={market.expiry} className="text-sm" />
+      </div>
 
       <div className="mt-4">
         <div className="label text-text-dim">Amount</div>
@@ -668,6 +733,43 @@ export function TradePanel({
         </p>
       )}
 
+      {/* Persistent USDC allowance control — always visible once the wallet
+          is on Base, so the user can approve (or re-approve) up front rather
+          than only when a bet is already sized. Approval is a one-time
+          max-uint256 grant; after that every bet is a single wallet popup. */}
+      {isConnected && ready && orderOptionBook && (
+        <div className="mt-4 flex items-center justify-between gap-2 rounded-md border border-line bg-bg-subtle px-3 py-2">
+          <div className="flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="text-text-dim">USDC allowance</span>
+            {allowance == null ? (
+              <span className="text-text-muted">checking…</span>
+            ) : approvedForTrading ? (
+              <span className="inline-flex items-center gap-1 font-medium text-pump dark:text-pump-dark">
+                <Check aria-hidden className="h-3 w-3" /> Approved
+              </span>
+            ) : (
+              <span className="font-medium text-text-muted">Not approved</span>
+            )}
+          </div>
+          <button
+            onClick={handleApprove}
+            disabled={approving}
+            aria-busy={approving}
+            className={cn(
+              'press-scale inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-text transition-colors hover:bg-surface-hover',
+              approving && 'cursor-not-allowed opacity-60'
+            )}
+          >
+            {approving && <Loader2 aria-hidden className="h-3 w-3 animate-spin" />}
+            {approving
+              ? 'Approving…'
+              : approvedForTrading
+              ? 'Update'
+              : 'Approve USDC'}
+          </button>
+        </div>
+      )}
+
       <div className="mt-4">
         {!isConnected ? (
           <ConnectButton.Custom>
@@ -691,24 +793,6 @@ export function TradePanel({
               </button>
             )}
           </ConnectButton.Custom>
-        ) : needsApproval && !insufficientBalance && amount >= MIN_BET ? (
-          // Pre-approval step — separated from the bet flow so the user
-          // does this once per token-spender pair (max-uint256 approval),
-          // and every subsequent bet is a single wallet popup.
-          <button
-            onClick={handleApprove}
-            disabled={approving}
-            aria-busy={approving}
-            className={cn(
-              'press-scale flex w-full items-center justify-center gap-2 rounded-md bg-brand py-3 text-base font-semibold text-white hover:bg-brand-dark transition-colors glow-brand',
-              approving && 'cursor-not-allowed opacity-60'
-            )}
-          >
-            {approving && (
-              <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
-            )}
-            {approving ? 'Approving…' : '1. Approve USDC for trading'}
-          </button>
         ) : (
           <button
             onClick={handleBet}
@@ -717,13 +801,19 @@ export function TradePanel({
               insufficientBalance ||
               !preview ||
               amount < MIN_BET ||
-              !ready
+              !ready ||
+              needsApproval
             }
             aria-busy={submitting}
             className={cn(
               'press-scale flex w-full items-center justify-center gap-2 rounded-md py-3 text-base font-semibold text-white transition-colors',
               dirCls,
-              (submitting || insufficientBalance || !preview || amount < MIN_BET || !ready) &&
+              (submitting ||
+                insufficientBalance ||
+                !preview ||
+                amount < MIN_BET ||
+                !ready ||
+                needsApproval) &&
                 'cursor-not-allowed opacity-60'
             )}
           >
@@ -736,6 +826,8 @@ export function TradePanel({
               ? 'Insufficient USDC'
               : amount < MIN_BET
               ? `Min $${MIN_BET.toFixed(2)}`
+              : needsApproval
+              ? 'Approve USDC above to bet'
               : !preview
               ? 'Calculating fill…'
               : `Bet ${market.direction} — $${amount.toFixed(2)} USDC`}
