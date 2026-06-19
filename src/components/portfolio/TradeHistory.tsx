@@ -330,7 +330,6 @@ function ActivityTable({
             <Th>Side</Th>
             <Th align="right">Contracts</Th>
             <Th align="right">Cost</Th>
-            <Th align="right">Entry</Th>
             <Th align="right">PnL</Th>
             <Th>Status</Th>
           </tr>
@@ -386,18 +385,22 @@ function ActivityTable({
               <Td align="right" mono>
                 {r.usdc != null && Number.isFinite(r.usdc) ? fmtMoney(r.usdc) : '—'}
               </Td>
-              <Td align="right" mono>
-                {r.entryPrice != null && Number.isFinite(r.entryPrice)
-                  ? fmtMoney(r.entryPrice)
-                  : '—'}
-              </Td>
               <Td align="right">
                 {r.position ? (
                   <LivePnlCell position={r.position} markOf={markOf} />
                 ) : r.realizedPnl != null && Number.isFinite(r.realizedPnl) ? (
                   <PnlPill amount={r.realizedPnl} />
                 ) : (
-                  <span className="text-text-dim">—</span>
+                  <span
+                    className="text-text-dim"
+                    title={
+                      isPending(r)
+                        ? 'Outcome is known once the market settles on-chain'
+                        : undefined
+                    }
+                  >
+                    {isPending(r) ? 'pending' : '—'}
+                  </span>
                 )}
               </Td>
               <Td>
@@ -427,17 +430,81 @@ function LivePnlCell({
   return <PnlPill amount={mark.unrealizedUsd} percent={mark.unrealizedPct} />;
 }
 
-function StatusBadge({ row }: { row: MergedRow }) {
-  const status = row.status.toUpperCase();
-  const cls =
-    status === 'FILLED' || status === 'OPEN'
-      ? 'bg-pump-light dark:bg-pump/15 text-pump dark:text-pump-dark'
-      : status === 'CANCELLED'
-      ? 'bg-dump-light dark:bg-dump/15 text-dump dark:text-dump-dark'
-      : 'bg-bg-subtle text-text-muted';
+/** A settled row: resolved on-chain (has a settlement type or a settle price). */
+function isSettledRow(row: MergedRow): boolean {
+  const s = row.status.toUpperCase();
   return (
-    <span className={cn('rounded-md px-2 py-0.5 text-xs font-bold uppercase', cls)}>
-      {status}
+    s === 'SETTLE' ||
+    s === 'SETTLED' ||
+    s === 'EXERCISE' ||
+    (row.settlePrice != null && Number.isFinite(row.settlePrice))
+  );
+}
+
+/** A filled bet that has neither settled nor remained a live open position. */
+function isPending(row: MergedRow): boolean {
+  const s = row.status.toUpperCase();
+  if (s === 'OPEN' || s === 'CANCEL' || s === 'CANCELLED') return false;
+  return !isSettledRow(row);
+}
+
+/**
+ * Collapse the messy raw status strings (indexer emits FILL/SETTLE/EXERCISE;
+ * the DB path emits OPEN/FILLED/SETTLE) into states a user can actually read.
+ * A bare "FILLED" left people unable to tell a still-pending bet from a
+ * resolved one, so settled rows now surface their outcome directly:
+ *   OPEN     — live position, marked to market (PnL column ticks)
+ *   WON/LOST — settled; PnL column shows the realized figure
+ *   SETTLED  — settled, flat/unknown PnL
+ *   PENDING  — filled, awaiting on-chain settlement
+ *   CANCELLED— offer cancelled
+ */
+function rowStatus(row: MergedRow): { label: string; cls: string; title?: string } {
+  const s = row.status.toUpperCase();
+
+  if (s === 'OPEN') {
+    return {
+      label: 'OPEN',
+      cls: 'bg-brand-light text-brand dark:bg-brand/15 dark:text-brand',
+      title: 'Live position — PnL is marked to the current price',
+    };
+  }
+  if (isSettledRow(row)) {
+    const pnl = row.realizedPnl;
+    if (pnl != null && Number.isFinite(pnl) && pnl > 0)
+      return {
+        label: 'WON',
+        cls: 'bg-pump-light text-pump dark:bg-pump/15 dark:text-pump-dark',
+      };
+    if (pnl != null && Number.isFinite(pnl) && pnl < 0)
+      return {
+        label: 'LOST',
+        cls: 'bg-dump-light text-dump dark:bg-dump/15 dark:text-dump-dark',
+      };
+    return { label: 'SETTLED', cls: 'bg-bg-subtle text-text-muted' };
+  }
+  if (s === 'CANCEL' || s === 'CANCELLED') {
+    return {
+      label: 'CANCELLED',
+      cls: 'bg-dump-light text-dump dark:bg-dump/15 dark:text-dump-dark',
+    };
+  }
+  // FILL / FILLED and anything not yet resolved.
+  return {
+    label: 'PENDING',
+    cls: 'bg-gold/15 text-gold',
+    title: 'Bet placed — awaiting on-chain settlement',
+  };
+}
+
+function StatusBadge({ row }: { row: MergedRow }) {
+  const { label, cls, title } = rowStatus(row);
+  return (
+    <span
+      title={title}
+      className={cn('rounded-md px-2 py-0.5 text-xs font-bold uppercase', cls)}
+    >
+      {label}
     </span>
   );
 }
