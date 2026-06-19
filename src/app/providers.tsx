@@ -8,6 +8,7 @@ import { Toaster } from 'sonner';
 import { wagmiConfig } from '@/lib/wagmi';
 import { useTheme } from '@/lib/theme';
 import { LiveFeedBoot } from '@/components/system/LiveFeedBoot';
+import { FeedbackWidget } from '@/components/system/FeedbackWidget';
 import '@rainbow-me/rainbowkit/styles.css';
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -30,6 +31,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <ThemedRainbowKit>
           <LiveFeedBoot />
           {children}
+          <FeedbackWidget />
           <Toaster
             position="top-right"
             theme="system"
