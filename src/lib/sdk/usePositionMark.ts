@@ -5,7 +5,7 @@ import type { Position } from '@thetanuts-finance/thetanuts-client';
 import { useAppStore } from '@/store/app';
 import { getReadClient } from './clients';
 import { normTx } from './explorer';
-import { costBasisUsd, unrealizedPnlUsd } from './positionLogic';
+import { premiumPaidUsd, unrealizedPnlUsd } from './positionLogic';
 import { useTradeHistoryDb, type DbTradeRow } from './useTradeHistoryDb';
 
 export interface PositionMark {
@@ -53,11 +53,13 @@ export function usePositionMarks(): (p: Position) => PositionMark {
       );
 
       // Premium (cost basis): prefer our DB's real notional; fall back to the
-      // indexer-derived cost only when there's no matching fill on record.
+      // indexer's authoritative pnlEntries cost (NaN when unavailable → shows
+      // "—") rather than the mmPrice-based costBasisUsd, which understated the
+      // real premium by orders of magnitude and inflated unrealized PnL/ROI.
       const premiumUsd =
         db?.notional_usdc != null && Number.isFinite(db.notional_usdc)
           ? db.notional_usdc
-          : costBasisUsd(p);
+          : premiumPaidUsd(p);
 
       const entryPerContractUsd =
         db?.entry_price != null && Number.isFinite(db.entry_price)

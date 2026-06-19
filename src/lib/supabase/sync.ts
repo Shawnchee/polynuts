@@ -175,10 +175,13 @@ export interface FillPayload {
   option_id: string;
   taker_address: string;
   market_label: string;
-  side: string;
+  // PUMP | DUMP | RANGE for UI-written fills; null for cron-recovered fills
+  // whose direction we can't derive from the OrderFilled event alone.
+  side: string | null;
   contracts: number;
   notional_usdc: number;
-  entry_price: number;
+  // Real per-contract premium for UI fills; null when unknown (recovered).
+  entry_price: number | null;
   created_at: string;
 }
 
