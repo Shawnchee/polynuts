@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app';
 import { getReadClient } from './clients';
 import { startDeribitFeed } from './deribitFeed';
@@ -16,8 +15,10 @@ import { startDeribitFeed } from './deribitFeed';
  *   pass `wsUrl` into the ThetanutsClient constructor in clients.ts.
  *
  * - **Order book** updates are picked up by React Query polling (30s in
- *   useOrders) plus an additional 30s invalidate from this hook so new
- *   markets surface promptly.
+ *   useOrders, which already pauses itself mid-trade). This hook used to add
+ *   its own 30s `invalidateQueries(['orders'])` on top of that — a redundant
+ *   second trigger that made the markets grid refetch and visibly reshuffle up
+ *   to twice per window. Removed; useOrders' own interval covers it.
  *
  * - **Activity feed** is hydrated on mount with recent on-chain
  *   OrderFill events via `client.events.getOrderFillEvents`, then kept
@@ -39,13 +40,11 @@ const ACTIVITY_POLL_MS = 90_000;
 export function useLiveFeed() {
   const setPrice = useAppStore((s) => s.setPrice);
   const prependActivity = useAppStore((s) => s.prependActivity);
-  const queryClient = useQueryClient();
   // Track last-seen tx hashes so we don't re-add the same fill on each poll
   const seenTxsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let feed: ReturnType<typeof startDeribitFeed> | null = null;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
     let fillsTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
@@ -100,14 +99,6 @@ export function useLiveFeed() {
       if (!feed) {
         feed = startDeribitFeed((asset, price) => setPrice(asset, price));
       }
-      if (!pollTimer) {
-        pollTimer = setInterval(() => {
-          // Don't yank the order book out from under someone mid-trade — the
-          // same pause that useOrders applies to its own refetchInterval.
-          if (useAppStore.getState().tradeInProgress) return;
-          queryClient.invalidateQueries({ queryKey: ['orders'] });
-        }, 30_000);
-      }
       if (!fillsTimer) {
         // Seed the feed immediately, then poll for new fills.
         // Polling frequency tuned for Alchemy free tier — see
@@ -121,10 +112,6 @@ export function useLiveFeed() {
       if (feed) {
         feed.close();
         feed = null;
-      }
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
       }
       if (fillsTimer) {
         clearInterval(fillsTimer);
@@ -146,5 +133,5 @@ export function useLiveFeed() {
       document.removeEventListener('visibilitychange', onVisibility);
       stop();
     };
-  }, [setPrice, prependActivity, queryClient]);
+  }, [setPrice, prependActivity]);
 }
