@@ -9,7 +9,7 @@ import type { Position } from '@thetanuts-finance/thetanuts-client';
 import { PageShell } from '@/components/layout/PageShell';
 import { PnlPill } from '@/components/portfolio/PnlPill';
 import { TableSkeleton } from '@/components/portfolio/TableSkeleton';
-import { TimerBadge } from '@/components/ui/TimerBadge';
+import { Countdown } from '@/components/ui/Countdown';
 import { usePositions } from '@/lib/sdk/usePortfolio';
 import { usePositionMarks, type PositionMark } from '@/lib/sdk/usePositionMark';
 import { TradeHistory } from '@/components/portfolio/TradeHistory';
@@ -299,7 +299,7 @@ function PositionsTable({
                   <PnlPill amount={mark.unrealizedUsd} percent={mark.unrealizedPct} />
                 </Td>
                 <Td align="right">
-                  <TimerBadge expirySec={p.option.expiry} />
+                  <Countdown expirySec={p.option.expiry} />
                 </Td>
                 <Td>
                   <span className="rounded-md bg-bg-subtle px-2 py-0.5 text-xs uppercase text-text-muted">
