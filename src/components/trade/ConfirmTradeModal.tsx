@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { MarketView } from '@/lib/sdk/markets';
 import { getReadClient } from '@/lib/sdk/clients';
@@ -249,12 +250,19 @@ export function ConfirmTradeModal({
     onConfirm(warning);
   }
 
-  return (
+  // Portal to <body> so the fixed overlay is positioned against the viewport,
+  // NOT against TradePanel — whose `animate-fade-in` leaves a lingering
+  // `transform: translateY(0)` (fill-mode: both) that establishes a containing
+  // block and traps `position: fixed`. On mobile the panel sits far down the
+  // page, so the trapped modal rendered off-screen and looked like "Bet does
+  // nothing". Rendered client-side only (it's only ever shown after a click).
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-trade-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 animate-fade-in"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 animate-fade-in"
       onClick={onCancel}
     >
       <div
@@ -376,7 +384,8 @@ export function ConfirmTradeModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

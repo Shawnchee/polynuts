@@ -41,6 +41,14 @@ export function pnlPct(p: Position): number | undefined {
   return (pnl / cost) * 100;
 }
 
+/**
+ * ⚠️ Returns an mmPrice-based figure, NOT the cash premium paid. `p.entryPrice`
+ * is the indexer's mmPrice (probability-like, ~0.005), so this understates the
+ * real dollar cost by orders of magnitude. Do NOT show this as a user-facing
+ * dollar cost or use it as a PnL/ROI denominator — prefer the DB's
+ * `notional_usdc`, then {@link premiumPaidUsd}. Kept only for internal/legacy
+ * callers that explicitly want the mmPrice notional.
+ */
 export function costBasisUsd(p: Position): number {
   const client = getReadClient();
   try {
@@ -51,6 +59,23 @@ export function costBasisUsd(p: Position): number {
   } catch {
     return NaN;
   }
+}
+
+/**
+ * Premium actually paid (cost basis) in USD, read from the indexer's
+ * `pnlEntries[].costUsd` (buyer side, 8-dec USD). This is the authoritative
+ * basis across all product families (incl. inverse-collateral spreads), unlike
+ * {@link costBasisUsd} which is mmPrice-based and wildly understates cost.
+ * Returns NaN when the indexer hasn't supplied a cost entry, so callers render
+ * "—" rather than a fabricated near-zero number.
+ */
+export function premiumPaidUsd(p: Position): number {
+  const buyerEntry = p.pnlEntries?.find((e) => e.side === 'buyer');
+  if (buyerEntry?.costUsd != null) {
+    const raw = Number(buyerEntry.costUsd);
+    if (Number.isFinite(raw)) return raw / 10 ** USD_FIELD_DECIMALS;
+  }
+  return NaN;
 }
 
 export function hasFinitePnl(p: Position): boolean {

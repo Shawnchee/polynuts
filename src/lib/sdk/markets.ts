@@ -59,6 +59,19 @@ export interface MarketView {
   implName: string;
 }
 
+/**
+ * Underlyings we surface. Live spot only streams for ETH and BTC (the Deribit
+ * feed), and every payout/mark/countdown the UI shows depends on that spot —
+ * so markets on other underlyings the Thetanuts book lists (DOGE, XRP, SOL,
+ * AVAX, BNB, …) can't be priced or marked and are filtered out everywhere via
+ * buildMarketView. Re-add an asset here only once it has a live price feed.
+ */
+export const SUPPORTED_ASSETS = new Set(['ETH', 'BTC']);
+
+export function isSupportedAsset(asset: string): boolean {
+  return SUPPORTED_ASSETS.has(asset);
+}
+
 export const SUPPORTED_IMPLS = new Set([
   'PUT',
   'INVERSE_CALL',
@@ -314,6 +327,9 @@ export function buildMarketView(
   // The SDK's Order.expiry IS the on-chain option expiry.
   const expirySec = Number(order.order.expiry);
   const asset = getAssetFromPriceFeed(config, raw.priceFeed);
+  // Only ETH/BTC have a live spot feed; markets we can't price are dropped so
+  // the user never sees a tradeable card we can't mark or settle a payout for.
+  if (!isSupportedAsset(asset)) return null;
   const question = generateQuestion(asset, implInfo.name, strikesAsc, expirySec);
   const structureName = getStructureLabel(implInfo.name);
   const family = familyFromImpl(implInfo.name);

@@ -38,15 +38,23 @@ async function runSync(sb: SupabaseClient, client: ThetanutsClient) {
 
   // 4. Write each of our fills to DB (recovery path).
   for (const fill of ourFills) {
+    // We only have the OrderFilled event here, whose `price` is the on-chain
+    // mmPrice (probability-like, ~0.005) — NOT the premium the taker paid.
+    // Synthesizing notional/entry from it produced a wildly understated cost
+    // basis that fed the Cost column and inflated displayed PnL. Record the
+    // trade so settlement can attach, but leave cost/side/entry unknown: the
+    // UI renders 0/null cost as "—", and a settlement's realized PnL comes from
+    // the indexer's authoritative `pnlUsd` (not payout − cost), so the missing
+    // basis doesn't corrupt any settled number.
     const payload: FillPayload = {
       tx_hash: fill.transactionHash,
       option_id: fill.option.toLowerCase(),
       taker_address: fill.taker.toLowerCase(),
       market_label: 'recovered',
-      side: 'unknown',
+      side: null,
       contracts: Number(fill.numContracts) / 1e6,
-      notional_usdc: (Number(fill.numContracts) / 1e6) * (Number(fill.price) / 1e8),
-      entry_price: Number(fill.price) / 1e8,
+      notional_usdc: 0,
+      entry_price: null,
       created_at: new Date().toISOString(),
     };
     try {

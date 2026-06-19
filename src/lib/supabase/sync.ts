@@ -122,6 +122,20 @@ export function buildMarketLabel(
   return `${underlying} ${strikes.map(fmt).join(' / ')}`;
 }
 
+/**
+ * Canonical join key between an indexer TradeHistory row and a DB trade row.
+ * The two sources format the same values differently: the indexer returns tx
+ * hashes WITHOUT the `0x` prefix and addresses checksummed, while our DB stores
+ * the `0x`-prefixed hash and a lowercased option_id. A raw string compare
+ * therefore NEVER matches, so settlements were never written and every settled
+ * trade stayed stuck on "FILLED" with no realized PnL. Strip the prefix +
+ * lowercase both parts so the key matches. (Mirrors `normTx` in explorer.ts,
+ * which is a `'use client'` module we can't import into this server file.)
+ */
+export function tradeKey(txHash: string, optionId: string): string {
+  return `${(txHash ?? '').toLowerCase().replace(/^0x/, '')}:${(optionId ?? '').toLowerCase()}`;
+}
+
 function findBuyerPosition(
   h: TradeHistory,
   positions: Position[],
@@ -161,10 +175,13 @@ export interface FillPayload {
   option_id: string;
   taker_address: string;
   market_label: string;
-  side: string;
+  // PUMP | DUMP | RANGE for UI-written fills; null for cron-recovered fills
+  // whose direction we can't derive from the OrderFilled event alone.
+  side: string | null;
   contracts: number;
   notional_usdc: number;
-  entry_price: number;
+  // Real per-contract premium for UI fills; null when unknown (recovered).
+  entry_price: number | null;
   created_at: string;
 }
 
@@ -213,7 +230,10 @@ export async function syncSettlementsOnly(
 
   const byKey = new Map<string, number>(
     openTrades.map((t) => [
-      `${(t as { tx_hash: string }).tx_hash}:${(t as { option_id: string }).option_id}`,
+      tradeKey(
+        (t as { tx_hash: string }).tx_hash,
+        (t as { option_id: string }).option_id,
+      ),
       (t as { id: number }).id,
     ]),
   );
@@ -228,10 +248,10 @@ export async function syncSettlementsOnly(
       (h) =>
         h.settlement &&
         h.buyer.toLowerCase() === addr &&
-        byKey.has(`${h.txHash}:${h.option.address}`),
+        byKey.has(tradeKey(h.txHash, h.option.address)),
     )
     .map((h) => {
-      const tradeId = byKey.get(`${h.txHash}:${h.option.address}`)!;
+      const tradeId = byKey.get(tradeKey(h.txHash, h.option.address))!;
       const payout = bigintToNumber(h.settlement!.payoutBuyer, USDC_DECIMALS);
       const matched = findBuyerPosition(h, positions);
       let pnl = indexerPnlUsd(matched);
@@ -327,7 +347,7 @@ export async function syncUserFromIndexer(
 
   const byKey = new Map<string, number>();
   for (const row of upserted ?? []) {
-    byKey.set(`${row.tx_hash}:${row.option_id}`, row.id as number);
+    byKey.set(tradeKey(row.tx_hash, row.option_id), row.id as number);
   }
 
   const settlementRows = history
@@ -335,10 +355,10 @@ export async function syncUserFromIndexer(
       (h) =>
         h.settlement &&
         h.buyer.toLowerCase() === addr &&
-        byKey.has(`${h.txHash}:${h.option.address}`),
+        byKey.has(tradeKey(h.txHash, h.option.address)),
     )
     .map((h) => {
-      const tradeId = byKey.get(`${h.txHash}:${h.option.address}`)!;
+      const tradeId = byKey.get(tradeKey(h.txHash, h.option.address))!;
       const payout = bigintToNumber(h.settlement!.payoutBuyer, USDC_DECIMALS);
       const matched = findBuyerPosition(h, positions);
       let pnl = indexerPnlUsd(matched);
