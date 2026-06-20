@@ -28,7 +28,8 @@ import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { useUsdcAllowance, MAX_UINT256 } from '@/lib/sdk/useUsdcAllowance';
 import { DirectionTag } from '@/components/ui/DirectionTag';
-import { Countdown } from '@/components/ui/Countdown';
+import { PriceToBeat } from '@/components/trade/PriceToBeat';
+import { HowItSettles } from '@/components/trade/HowItSettles';
 import { PayoutChart } from '@/components/trade/PayoutChart';
 import { TradingViewChart } from '@/components/trade/TradingViewChart';
 import {
@@ -572,20 +573,10 @@ export function TradePanel({
 
       <p className="mt-3 text-base font-medium leading-snug text-text">{market.question}</p>
 
-      {/* Live countdown to settlement — the user wanted to see exactly how
-          long is left on a market the moment they open it, not just the
-          absolute close time buried in Trade details. */}
-      <div className="mt-3 flex items-center justify-between rounded-md border border-line bg-bg-subtle px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="label text-text-dim">Closes in</span>
-          {typeof spotPrice === 'number' && Number.isFinite(spotPrice) && (
-            <span className="num text-xs tabular-nums text-text-muted">
-              {market.asset} ${spotPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-          )}
-        </div>
-        <Countdown expirySec={market.expiry} className="text-sm" />
-      </div>
+      {/* Price-to-beat header — live spot vs the level this bet needs, plus the
+          countdown. The most decision-relevant comparison on the panel, so it
+          sits right under the question. */}
+      <PriceToBeat market={market} spot={spotPrice} />
 
       <div className="mt-4">
         <div className="label text-text-dim">Amount</div>
@@ -725,6 +716,8 @@ export function TradePanel({
           />
         </div>
       </details>
+
+      <HowItSettles market={market} />
 
       {previewError && <p className="mt-2 text-sm text-dump">{previewError}</p>}
 
