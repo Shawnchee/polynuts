@@ -150,8 +150,16 @@ export default function MarketsPage() {
     () => new Set(featured.map((m) => m.id)),
     [featured]
   );
+  // When the whole filtered set fits inside the featured hero, subtracting the
+  // featured markets leaves an empty grid — clicking a narrow expiry like
+  // "Today 10:00" showed only the rotating hero with a blank list beneath it,
+  // which reads as "nothing loaded". In that case show the full filtered set in
+  // the grid; the hero just highlights the top few on top of the same list.
   const rest = useMemo(
-    () => filtered.filter((m) => !featuredIds.has(m.id)),
+    () =>
+      filtered.length <= FEATURED_COUNT
+        ? filtered
+        : filtered.filter((m) => !featuredIds.has(m.id)),
     [filtered, featuredIds]
   );
 
