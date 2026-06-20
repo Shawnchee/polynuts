@@ -1,8 +1,37 @@
 'use client';
 
-import { ThetanutsClient } from '@thetanuts-finance/thetanuts-client';
+import { ThetanutsClient, type KeyStorageProvider } from '@thetanuts-finance/thetanuts-client';
 import { ethers } from 'ethers';
 import { polynutsLogger } from './logger';
+
+/**
+ * Polynuts is taker-only and never exercises the SDK's RFQ flow, but the
+ * ThetanutsClient constructor eagerly builds an RFQKeyManagerModule. With no
+ * provider configured it falls back to LocalStorageProvider, which fires a
+ * one-time console.warn about storing RFQ keys in plaintext localStorage
+ * (TNU-AUDIT-0063). We never store keys — the user's wallet key stays in their
+ * wallet extension and never touches our code — so we hand the SDK a
+ * self-contained in-memory provider. Nothing is ever persisted, and because it
+ * is not an instance of the SDK's own MemoryStorageProvider it also avoids that
+ * class's "keys will be lost" warning. Net effect: zero key-storage noise.
+ */
+class EphemeralKeyStorage implements KeyStorageProvider {
+  private mem = new Map<string, string>();
+  get(keyId: string) {
+    return this.mem.get(keyId) ?? null;
+  }
+  set(keyId: string, privateKey: string) {
+    this.mem.set(keyId, privateKey);
+  }
+  remove(keyId: string) {
+    this.mem.delete(keyId);
+  }
+  has(keyId: string) {
+    return this.mem.has(keyId);
+  }
+}
+
+const KEY_STORAGE = new EphemeralKeyStorage();
 
 const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 8453);
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? 'https://base-mainnet.public.blastapi.io';
@@ -74,6 +103,7 @@ export function getReadClient(): ThetanutsClient {
     stateApiUrl: INDEXER_STATE_PROXY_URL,
     indexerApiUrl: INDEXER_BOOK_PROXY_URL,
     logger: polynutsLogger,
+    keyStorageProvider: KEY_STORAGE,
   });
   return _readClient;
 }
@@ -88,6 +118,7 @@ export function createSignerClient(signer: ethers.Signer): ThetanutsClient {
     stateApiUrl: INDEXER_STATE_PROXY_URL,
     indexerApiUrl: INDEXER_BOOK_PROXY_URL,
     logger: polynutsLogger,
+    keyStorageProvider: KEY_STORAGE,
   });
 }
 
