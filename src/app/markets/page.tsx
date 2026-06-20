@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { TopNav } from '@/components/nav/TopNav';
 import { BottomNav } from '@/components/nav/BottomNav';
@@ -39,6 +39,30 @@ export default function MarketsPage() {
   const setExpiryFilter = useAppStore((s) => s.setExpiryFilter);
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
+
+  // Selecting a market from a card. Below the `lg` breakpoint the trade panel
+  // renders inline *beneath* the market grid (no sidebar), so on a phone the
+  // panel updates far off-screen and tapping "Bet" looks like it does nothing.
+  // Scroll it into view on those viewports so the panel visibly opens. On `lg`+
+  // the panel is a sticky sidebar that's always visible, so we leave the scroll
+  // position alone.
+  const selectAndReveal = useCallback(
+    (id: string | null) => {
+      selectMarket(id);
+      if (
+        id &&
+        typeof window !== 'undefined' &&
+        window.matchMedia('(max-width: 1023px)').matches
+      ) {
+        requestAnimationFrame(() => {
+          document
+            .getElementById('trade-panel')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    },
+    [selectMarket]
+  );
 
   // Deep-link selection — the landing "Trade these right now" rows link to
   // /markets?m=<marketId>. Apply it once the order book has loaded so the
@@ -176,7 +200,7 @@ export default function MarketsPage() {
               <FeaturedHero
                 markets={featured}
                 selectedId={selectedId}
-                onSelect={selectMarket}
+                onSelect={selectAndReveal}
                 multiplierByMarket={multiplierByMarket}
               />
             )}
@@ -203,7 +227,7 @@ export default function MarketsPage() {
                       <MarketCard
                         market={m}
                         selected={selectedId === m.id}
-                        onSelect={selectMarket}
+                        onSelect={selectAndReveal}
                       />
                     </div>
                   ))}
