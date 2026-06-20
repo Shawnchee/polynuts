@@ -40,6 +40,13 @@ interface AppStore {
    * don't reshuffle out from under someone who is halfway through a bet.
    */
   tradeInProgress: boolean;
+  /**
+   * Whether the feedback modal is open. Lifted to the store so it can be
+   * triggered from two places: the floating button (desktop) and the top-nav
+   * button (mobile, where the floating button is hidden to avoid overlapping
+   * the bottom tab bar).
+   */
+  feedbackOpen: boolean;
 
   setFilter: (f: FilterTab) => void;
   setSort: (s: SortKey) => void;
@@ -48,6 +55,7 @@ interface AppStore {
   prependActivity: (item: ActivityItem) => void;
   setPrice: (asset: 'ETH' | 'BTC', price: number) => void;
   setTradeInProgress: (v: boolean) => void;
+  setFeedbackOpen: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -58,6 +66,7 @@ export const useAppStore = create<AppStore>((set) => ({
   activity: [],
   prices: {},
   tradeInProgress: false,
+  feedbackOpen: false,
 
   setFilter: (f) => set({ filter: f }),
   setSort: (s) => set({ sort: s }),
@@ -68,6 +77,7 @@ export const useAppStore = create<AppStore>((set) => ({
   setPrice: (asset, price) =>
     set((s) => ({ prices: { ...s.prices, [asset]: price } })),
   setTradeInProgress: (v) => set({ tradeInProgress: v }),
+  setFeedbackOpen: (v) => set({ feedbackOpen: v }),
 }));
 
 export interface ExpiryGroup {

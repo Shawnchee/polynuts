@@ -15,13 +15,19 @@ import {
   getSupabaseBrowser,
   hasSupabaseConfigClient,
 } from '@/lib/supabase/browser';
+import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 
 /**
- * Floating "Feedback" button (bottom-right) that opens a small modal form.
- * Submissions go straight into public.feedback via the anon browser client —
- * the table's RLS allows anon INSERT but no public SELECT, so this is a
- * write-only channel; the project owner reads rows in the Supabase dashboard.
+ * Feedback modal form. Submissions go straight into public.feedback via the
+ * anon browser client — the table's RLS allows anon INSERT but no public
+ * SELECT, so this is a write-only channel; the project owner reads rows in the
+ * Supabase dashboard.
+ *
+ * The trigger lives in two places: a floating bottom-right button on desktop
+ * (hidden on mobile so it doesn't cover the bottom tab bar) and a button in the
+ * top nav on mobile. Both flip `feedbackOpen` in the store, which this widget
+ * reads to show the modal.
  *
  * Renders nothing when Supabase isn't configured (no env vars) so a misconfig
  * never surfaces a dead button.
@@ -37,7 +43,8 @@ const CATEGORIES = [
 export function FeedbackWidget() {
   // Hooks must run unconditionally; we gate on config only for what we render.
   const [configured] = useState(() => hasSupabaseConfigClient());
-  const [open, setOpen] = useState(false);
+  const open = useAppStore((s) => s.feedbackOpen);
+  const setOpen = useAppStore((s) => s.setFeedbackOpen);
   const [message, setMessage] = useState('');
   const [category, setCategory] = useState('');
   const [email, setEmail] = useState('');
@@ -59,7 +66,7 @@ export function FeedbackWidget() {
     setOpen(false);
     // Return focus to the trigger so keyboard users aren't dropped at <body>.
     triggerRef.current?.focus();
-  }, []);
+  }, [setOpen]);
 
   const reset = useCallback(() => {
     setMessage('');
@@ -154,7 +161,9 @@ export function FeedbackWidget() {
         aria-haspopup="dialog"
         aria-expanded={open}
         className={cn(
-          'press-scale fixed bottom-4 right-4 z-40 inline-flex items-center gap-2',
+          // Desktop only — on mobile the trigger lives in the top nav so it
+          // doesn't float over the bottom tab bar (Markets/Portfolio/…).
+          'press-scale fixed bottom-4 right-4 z-40 hidden items-center gap-2 sm:inline-flex',
           'rounded-full border border-line bg-bg-elev px-4 py-2.5 shadow-lg',
           'text-sm font-medium text-text hover:bg-surface-hover transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60',

@@ -2,10 +2,13 @@
 
 import Link from 'next/link';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { MessageSquarePlus } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { ThemeToggle } from '@/components/nav/ThemeToggle';
 import { ChainStatusChip } from '@/components/nav/NetworkGuard';
+import { hasSupabaseConfigClient } from '@/lib/supabase/browser';
+import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 
 const tabs = [
@@ -17,6 +20,8 @@ const tabs = [
 export function TopNav({ active = '/' }: { active?: string }) {
   const { isConnected } = useAccount();
   const { data: bal } = useUsdcBalance();
+  const setFeedbackOpen = useAppStore((s) => s.setFeedbackOpen);
+  const feedbackReady = hasSupabaseConfigClient();
 
   return (
     <header className="sticky top-0 z-30 glass border-b border-line">
@@ -59,6 +64,17 @@ export function TopNav({ active = '/' }: { active?: string }) {
         </div>
         <div className="flex items-center gap-2">
           <ChainStatusChip />
+          {feedbackReady && (
+            <button
+              type="button"
+              onClick={() => setFeedbackOpen(true)}
+              aria-haspopup="dialog"
+              aria-label="Send feedback"
+              className="press-scale inline-flex h-9 w-9 items-center justify-center rounded-md border border-line bg-surface text-text-muted transition-colors hover:bg-surface-hover hover:text-text sm:hidden"
+            >
+              <MessageSquarePlus className="h-4 w-4 text-brand" aria-hidden="true" />
+            </button>
+          )}
           {isConnected && bal && (
             <div className="hidden items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 sm:flex">
               <span className="label text-text-dim">USDC</span>
