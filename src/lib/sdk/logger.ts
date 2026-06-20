@@ -49,6 +49,14 @@ function isExpectedNoise(msg: string, meta: unknown): boolean {
     /eth_getLogs requests with up to a \d+ block range/i.test(text) ||
     /rate.?limit/i.test(text) ||
     /-32600/i.test(text) ||
+    // `simulatePayout` is a pure payoff fn we sweep across a wide price band
+    // (PayoutChart / usePayout probes). At out-of-domain prices the contract
+    // math reverts with no reason string (CALL_EXCEPTION / "missing revert
+    // data"). Those points are dropped from the curve, so the revert is
+    // expected and not actionable. Gate on the message so a real CALL_EXCEPTION
+    // elsewhere still logs loudly.
+    (/simulate payout/i.test(msg) &&
+      /(missing revert data|call_exception)/i.test(text)) ||
     // User explicitly rejected a wallet signature — that's user action,
     // not an error. Examples: MetaMask "User denied transaction
     // signature", Coinbase Wallet "User rejected request".

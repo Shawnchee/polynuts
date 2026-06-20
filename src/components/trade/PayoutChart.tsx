@@ -99,7 +99,7 @@ export function PayoutChart({ market, numContracts, betUsd }: PayoutChartProps) 
     queryFn: async () => {
       if (!numContracts || numContracts <= 0n) return [];
       const client = getReadClient();
-      const results = await Promise.all(
+      const settled = await Promise.allSettled(
         probes.map((p) =>
           client.option.simulatePayout(
             market.implementation,
@@ -109,18 +109,26 @@ export function PayoutChart({ market, numContracts, betUsd }: PayoutChartProps) 
           )
         )
       );
-      return probes.map((p, i) => {
+      // `simulatePayout` is a pure payoff fn; at the extreme ends of this 41-
+      // point sweep the contract math reverts (CALL_EXCEPTION). Drop those
+      // probe prices instead of failing the whole curve — the remaining points
+      // still render a continuous line across the valid range.
+      const out: ChartPoint[] = [];
+      probes.forEach((p, i) => {
+        const r = settled[i];
+        if (r.status !== 'fulfilled') return;
         const priceUsd = Number(client.utils.fromPriceDecimals(p));
-        const payoutUsd = Number(client.utils.fromUsdcDecimals(results[i]));
+        const payoutUsd = Number(client.utils.fromUsdcDecimals(r.value));
         const netUsd = payoutUsd - betUsd;
-        return {
+        out.push({
           priceUsd,
           payoutUsd,
           netUsd,
           profitNet: netUsd > 0 ? netUsd : 0,
           lossNet: netUsd < 0 ? netUsd : 0,
-        };
+        });
       });
+      return out;
     },
     staleTime: 60_000,
   });

@@ -28,7 +28,12 @@ async function fetchMaxPayoutForMarket(
   if (!probes) return null;
 
   const client = getReadClient();
-  const results = await Promise.all(
+  // `simulatePayout` is a pure payoff fn. At out-of-domain probe prices the
+  // contract math can revert with no reason string (CALL_EXCEPTION / "missing
+  // revert data"). We only need the structural max, so a reverted probe is
+  // dropped rather than failing the whole query (Promise.all would reject the
+  // batch on the first revert and blank the payout/odds).
+  const settled = await Promise.allSettled(
     probes.map((price) =>
       client.option.simulatePayout(
         market.implementation,
@@ -38,7 +43,11 @@ async function fetchMaxPayoutForMarket(
       )
     )
   );
-  return results.reduce((max, x) => (x > max ? x : max), 0n);
+  let max: bigint | null = null;
+  for (const r of settled) {
+    if (r.status === 'fulfilled' && (max === null || r.value > max)) max = r.value;
+  }
+  return max;
 }
 
 const PROBE_UNIT = 1_000_000n; // 1 USDC of contracts — used for per-unit max payout
