@@ -1,13 +1,19 @@
 'use client';
 
-import { Trophy } from 'lucide-react';
+import { Activity, Trophy } from 'lucide-react';
 import { PageShell } from '@/components/layout/PageShell';
+import { DirectionTag } from '@/components/ui/DirectionTag';
+import type { Direction } from '@/lib/sdk/markets';
 import {
   useLeaderboardDb,
   type LeaderboardDbRow,
 } from '@/lib/sdk/useLeaderboardDb';
+import {
+  useRecentTradesDb,
+  type RecentTradeDbRow,
+} from '@/lib/sdk/useRecentTradesDb';
 import { hasSupabaseConfigClient } from '@/lib/supabase/browser';
-import { fmtUsd, shortAddress } from '@/lib/utils';
+import { fmtTimeAgo, fmtUsd, shortAddress } from '@/lib/utils';
 
 export default function LeaderboardPage() {
   const supabaseReady = hasSupabaseConfigClient();
@@ -22,9 +28,80 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
+        {supabaseReady && <RecentTrades />}
         {supabaseReady ? <LeaderboardTable /> : <WarmingUp />}
       </div>
     </PageShell>
+  );
+}
+
+function RecentTrades() {
+  const { data, isLoading, error } = useRecentTradesDb();
+
+  // Recent trades are a secondary flourish — the rankings are the primary
+  // content. If the query errors or there's nothing yet, render nothing rather
+  // than an empty/broken card.
+  if (error) return null;
+  if (!isLoading && (!data || data.length === 0)) return null;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-line bg-bg-elev">
+      <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+        <Activity className="h-4 w-4 text-brand" aria-hidden />
+        <h2 className="text-sm font-semibold text-text">Recent trades</h2>
+      </div>
+      <div className="divide-y divide-line">
+        {isLoading
+          ? Array.from({ length: 5 }).map((_, i) => <TradeSkeleton key={i} />)
+          : data!.map((t) => (
+              <TradeRow key={`${t.tx_hash}-${t.option_id}`} trade={t} />
+            ))}
+      </div>
+    </section>
+  );
+}
+
+function asDirection(side: string | null): Direction | null {
+  const s = (side ?? '').toUpperCase();
+  return s === 'PUMP' || s === 'DUMP' || s === 'RANGE' ? (s as Direction) : null;
+}
+
+function TradeRow({ trade }: { trade: RecentTradeDbRow }) {
+  const dir = asDirection(trade.side);
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+      <div className="flex min-w-0 items-center gap-2">
+        {dir ? (
+          <DirectionTag direction={dir} />
+        ) : (
+          <span className="text-xs font-bold uppercase text-text-dim">—</span>
+        )}
+        <span className="truncate text-text">{trade.market_label ?? 'Option'}</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-3 tabular-nums">
+        <span className="num font-semibold text-text">
+          {fmtUsd(Number(trade.notional_usdc))}
+        </span>
+        <span className="hidden font-mono text-xs text-text-dim sm:inline">
+          {shortAddress(trade.taker_address)}
+        </span>
+        <span className="w-16 text-right text-xs text-text-dim">
+          {fmtTimeAgo(trade.created_at)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TradeSkeleton() {
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <div className="flex items-center gap-2">
+        <div className="h-4 w-14 animate-pulse rounded bg-line" />
+        <div className="h-3 w-32 animate-pulse rounded bg-line" />
+      </div>
+      <div className="h-3 w-16 animate-pulse rounded bg-line" />
+    </div>
   );
 }
 
@@ -44,25 +121,34 @@ function LeaderboardTable() {
 
   return (
     <section className="overflow-hidden rounded-xl border border-line bg-bg-elev">
-      <div className="grid grid-cols-[3rem_1fr_5rem_5rem_6rem_7rem] gap-2 border-b border-line px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-text-dim">
-        <div>#</div>
-        <div>Trader</div>
-        <div className="text-right">Trades</div>
-        <div className="text-right">Wins</div>
-        <div className="text-right">Win rate</div>
-        <div className="text-right">Realized PnL</div>
-      </div>
-      <div className="divide-y divide-line">
-        {isLoading ? (
-          <SkeletonRows />
-        ) : data && data.length > 0 ? (
-          data.map((row, i) => <Row key={row.address} rank={i + 1} row={row} />)
-        ) : (
-          <div className="px-4 py-12 text-center text-sm text-text-muted">
-            No traders ranked yet — the board fills in within a few minutes of the
-            first settled trade.
+      {/* Fixed-width columns overflow narrow phones — let the table scroll
+          horizontally instead of crushing the columns, matching the portfolio
+          tables' scroll pattern. */}
+      <div className="scrollbar-thin overflow-x-auto">
+        <div className="min-w-[34rem]">
+          <div className="grid grid-cols-[3rem_1fr_5rem_5rem_6rem_7rem] gap-2 border-b border-line px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-text-dim">
+            <div>#</div>
+            <div>Trader</div>
+            <div className="text-right">Trades</div>
+            <div className="text-right">Wins</div>
+            <div className="text-right">Win rate</div>
+            <div className="text-right">Realized PnL</div>
           </div>
-        )}
+          <div className="divide-y divide-line">
+            {isLoading ? (
+              <SkeletonRows />
+            ) : data && data.length > 0 ? (
+              data.map((row, i) => (
+                <Row key={row.address} rank={i + 1} row={row} />
+              ))
+            ) : (
+              <div className="px-4 py-12 text-center text-sm text-text-muted">
+                No traders ranked yet — the board fills in within a few minutes
+                of the first settled trade.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );
