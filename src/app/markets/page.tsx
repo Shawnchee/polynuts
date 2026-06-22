@@ -252,10 +252,17 @@ export default function MarketsPage() {
           </section>
 
           <div id="trade-panel" className="flex w-full shrink-0 flex-col gap-6 lg:w-[320px]">
-            <div className="lg:sticky lg:top-20">
+            {/* z-20 keeps the opaque sticky panel painting ABOVE the activity
+                feed below it. The feed's rows carry `animate-fade-in`, whose
+                `both` fill-mode leaves a permanent `transform`, which spawns a
+                stacking context that would otherwise paint over the panel where
+                they overlap during scroll (the "bleed-through" bug). The
+                confirm modal is portaled to <body>, so this context doesn't
+                trap it. */}
+            <div className="relative z-20 lg:sticky lg:top-20">
               <TradePanel market={selectedMarket} isLoading={isLoading} />
             </div>
-            <div className="hidden lg:block">
+            <div className="relative z-0 hidden lg:block">
               <Sidebar />
             </div>
           </div>
