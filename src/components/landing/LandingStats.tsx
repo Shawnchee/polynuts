@@ -43,12 +43,16 @@ function Cell({
 }) {
   // Solid cell bg over the gap-px container draws the divider grid at any
   // column count, so the strip reflows cleanly across breakpoints.
+  // justify-center keeps the number+label block vertically centred so cells
+  // don't go bottom-heavy when the grid stretches them to the tallest cell;
+  // whitespace-nowrap keeps every label on one line so the numbers stay on a
+  // shared baseline (the longest, "Protocol volume", was wrapping).
   return (
-    <div className="flex flex-col gap-1.5 bg-[#131720] px-4 py-10 text-center">
+    <div className="flex flex-col justify-center gap-1.5 bg-[#131720] px-4 py-9 text-center">
       <div className="font-mono text-3xl font-bold tabular-nums text-white sm:text-4xl">
         {ready ? children : <Skeleton />}
       </div>
-      <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-white/35">
+      <div className="whitespace-nowrap font-mono text-[11px] uppercase tracking-[0.12em] text-white/35">
         {label}
       </div>
     </div>
