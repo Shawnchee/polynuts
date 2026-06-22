@@ -6,6 +6,7 @@ import { SpotlightCard } from '@/components/landing/SpotlightCard';
 import { LandingStats } from '@/components/landing/LandingStats';
 import { LiveMarkets } from '@/components/landing/LiveMarkets';
 import { SpotTicker } from '@/components/landing/SpotTicker';
+import { HeroAppPreview } from '@/components/landing/HeroAppPreview';
 
 const ACCENT = '#60a5fa';
 
@@ -99,59 +100,67 @@ export default function LandingPage() {
       </header>
 
       {/* ── Hero ── */}
-      <section className="relative flex min-h-[100svh] flex-col items-center justify-center overflow-hidden px-6 pt-24 text-center">
+      <section className="relative flex min-h-[100svh] items-center overflow-hidden px-6 pb-16 pt-28">
         {/* Flat blueprint grid — replaces the WebGL aurora. No glow. */}
         <div className="pointer-events-none absolute inset-0 grid-bg" />
 
-        <div className="relative z-10 flex w-full max-w-3xl flex-col items-center gap-7">
-          <div className="flex flex-col items-center gap-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-white/55">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
-              Live on Base mainnet
+        <div className="relative z-10 mx-auto grid w-full max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
+          {/* Copy — left-aligned, asymmetric. Centered-everything is the #1 AI-slop tell. */}
+          <div className="flex flex-col items-start gap-6 text-left">
+            <div className="flex flex-col items-start gap-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-white/55">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
+                Live on Base mainnet
+              </div>
+              <SpotTicker />
             </div>
-            <SpotTicker />
+
+            <h1 className="font-display text-[clamp(2.5rem,6vw,4.5rem)] font-extrabold leading-[0.98] tracking-[-0.03em]">
+              Trade the moment.
+              <span className="mt-1 block" style={{ color: ACCENT }}>
+                On-chain.
+              </span>
+            </h1>
+
+            <p className="max-w-md text-base leading-relaxed text-white/55 sm:text-lg">
+              Bet whether BTC or ETH will pump, dump, or range — in the next hour, day,
+              or week. Fixed risk. Instant settlement. No custody.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Link
+                href="/markets"
+                className="group press-scale flex items-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-[#131720] transition-all hover:brightness-110"
+                style={{ background: ACCENT }}
+              >
+                Start trading
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+              <a
+                href="#how"
+                className="rounded-full border border-white/10 bg-white/[0.03] px-7 py-3.5 text-base font-medium text-white/75 transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+              >
+                How it works
+              </a>
+            </div>
+
+            {/* Direction legend — mono, restrained */}
+            <div className="flex items-center gap-4 pt-2 font-mono text-xs text-white/40">
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-400" /> PUMP
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-400" /> DUMP
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-400" /> RANGE
+              </span>
+            </div>
           </div>
 
-          <h1 className="font-display text-[clamp(2.75rem,8vw,5.25rem)] font-extrabold leading-[0.98] tracking-[-0.03em]">
-            Trade the moment.
-            <span className="mt-1 block" style={{ color: ACCENT }}>
-              On-chain.
-            </span>
-          </h1>
-
-          <p className="max-w-xl text-base leading-relaxed text-white/55 sm:text-lg">
-            Bet whether BTC or ETH will pump, dump, or range — in the next hour, day,
-            or week. Fixed risk. Instant settlement. No custody.
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
-            <Link
-              href="/markets"
-              className="group press-scale flex items-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-[#131720] transition-all hover:brightness-110"
-              style={{ background: ACCENT }}
-            >
-              Start trading
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-            <a
-              href="#how"
-              className="rounded-full border border-white/10 bg-white/[0.03] px-7 py-3.5 text-base font-medium text-white/75 transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
-            >
-              How it works
-            </a>
-          </div>
-
-          {/* Direction legend — mono, restrained */}
-          <div className="flex items-center gap-4 pt-2 font-mono text-xs text-white/40">
-            <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-400" /> PUMP
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-rose-400" /> DUMP
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-violet-400" /> RANGE
-            </span>
+          {/* Product-as-hero — the real markets surface, live, framed as an app window. */}
+          <div className="w-full lg:pl-4">
+            <HeroAppPreview />
           </div>
         </div>
       </section>
