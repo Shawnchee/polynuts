@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { Position } from '@thetanuts-finance/thetanuts-client';
@@ -16,11 +16,16 @@ import { TradeHistory } from '@/components/portfolio/TradeHistory';
 import { getReadClient } from '@/lib/sdk/clients';
 import { txUrl } from '@/lib/sdk/explorer';
 import { hasFinitePnl, isOpen } from '@/lib/sdk/positionLogic';
-import { fmtUsd, shortAddress } from '@/lib/utils';
+import { cn, fmtUsd, shortAddress } from '@/lib/utils';
 
 export default function PortfolioPage() {
   const { isConnected, address } = useAccount();
-  const { data: positions = [], isLoading: posLoading } = usePositions();
+  const {
+    data: positions = [],
+    isLoading: posLoading,
+    isFetching: posFetching,
+    refetch: refetchPositions,
+  } = usePositions();
   const markOf = usePositionMarks();
 
   const openPositions = useMemo(() => positions.filter(isOpen).filter(hasFinitePnl), [positions]);
@@ -50,6 +55,9 @@ export default function PortfolioPage() {
           loading={posLoading}
           empty={<EmptyPositions />}
           skeleton={<TableSkeleton cols={7} rows={3} />}
+          action={
+            <RefreshButton busy={posFetching} onClick={() => void refetchPositions()} />
+          }
         >
           {openPositions.length > 0 && (
             <PositionsTable rows={openPositions} markOf={markOf} />
@@ -72,7 +80,7 @@ function ConnectGate() {
         Sign in to see your open positions, settled history, and P&amp;L.
       </p>
       <ConnectButton />
-      <Link href="/" className="text-sm text-brand hover:underline">
+      <Link href="/markets" className="text-sm text-brand hover:underline">
         ← Back to Markets
       </Link>
     </div>
@@ -178,6 +186,7 @@ function Section({
   loading,
   empty,
   skeleton,
+  action,
   children,
 }: {
   title: string;
@@ -185,6 +194,7 @@ function Section({
   loading: boolean;
   empty: React.ReactNode;
   skeleton: React.ReactNode;
+  action?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
@@ -196,9 +206,31 @@ function Section({
             {loading ? '' : count}
           </span>
         </div>
+        {action}
       </div>
       {loading ? skeleton : count === 0 ? empty : children}
     </section>
+  );
+}
+
+/**
+ * Manual refresh for the open-positions table. Positions already auto-refetch
+ * every 30s (usePositions), but a fill or settlement can land between ticks —
+ * this lets the user pull the latest indexer state on demand. Spins while a
+ * fetch is in flight and disables to avoid hammering the indexer.
+ */
+function RefreshButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      aria-busy={busy}
+      title="Refresh open positions"
+      className="press-scale inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <RefreshCw aria-hidden className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
+      {busy ? 'Refreshing…' : 'Refresh'}
+    </button>
   );
 }
 
@@ -210,7 +242,7 @@ function EmptyPositions() {
         Place a bet and your open positions, exposure, and live P&amp;L will show up here.
       </p>
       <Link
-        href="/"
+        href="/markets"
         className="press-scale rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
       >
         Browse markets
