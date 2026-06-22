@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, ArrowUpRight, ShieldCheck, Zap, Activity, Layers } from 'lucide-react';
-import { SpotlightCard } from '@/components/landing/SpotlightCard';
+import { ArrowRight, ArrowUpRight } from 'lucide-react';
+import { PixelIcon } from '@/components/landing/PixelIcon';
 import { LandingStats } from '@/components/landing/LandingStats';
 import { LiveMarkets } from '@/components/landing/LiveMarkets';
 import { SpotTicker } from '@/components/landing/SpotTicker';
@@ -19,56 +19,49 @@ const DIR_COLOR: Record<string, string> = {
 const STEPS = [
   {
     step: '01',
+    icon: 'market',
     title: 'Pick a market',
     body: 'Browse live BTC and ETH options expiring today, tomorrow, or next week. Every market resolves on-chain — no counterparty, no custody.',
-    accent: ACCENT,
-    spotlightColor: 'rgba(96,165,250,0.14)',
   },
   {
     step: '02',
+    icon: 'direction',
     title: 'Choose your direction',
     body: 'PUMP if you think price finishes above the strike. DUMP if below. RANGE if it stays inside the band. Your max loss is always your bet.',
-    accent: '#22c55e',
-    spotlightColor: 'rgba(34,197,94,0.12)',
     chips: ['PUMP', 'DUMP', 'RANGE'],
   },
   {
     step: '03',
+    icon: 'settle',
     title: 'Win or lose — instantly',
     body: 'When the market settles, the on-chain oracle records the price. Winners collect their USDC payout automatically — no claim needed.',
-    accent: '#facc15',
-    spotlightColor: 'rgba(250,204,21,0.10)',
   },
 ];
 
 const FEATURES = [
   {
-    icon: ShieldCheck,
+    icon: 'lock',
     kicker: 'Custody',
     title: 'Non-custodial',
     body: 'Your USDC, your keys. Smart contracts handle every fill and settlement — no withdrawal requests, no KYC.',
-    tint: 'rgba(34,197,94,0.12)',
   },
   {
-    icon: Zap,
+    icon: 'bolt',
     kicker: 'Speed',
     title: 'Sub-second fills',
     body: 'Bets execute on Base in ~2s. Gas is pinned to 80k so your wallet popup appears immediately, even on slow RPCs.',
-    tint: 'rgba(250,204,21,0.12)',
   },
   {
-    icon: Activity,
+    icon: 'odds',
     kicker: 'Pricing',
     title: 'Real-time odds',
     body: 'Implied probability and max multiplier are computed on-chain via simulatePayout — not a marketing estimate.',
-    tint: 'rgba(96,165,250,0.12)',
   },
   {
-    icon: Layers,
+    icon: 'layers',
     kicker: 'Infrastructure',
     title: 'Powered by Thetanuts V4',
     body: 'Polynuts is a front-end for Thetanuts Finance V4 structured-product vaults — audited, live since 2021.',
-    tint: 'rgba(167,139,250,0.12)',
   },
 ];
 
@@ -138,6 +131,10 @@ export default function LandingPage() {
               </Link>
               <a
                 href="#how"
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' });
+                }}
                 className="rounded-full border border-white/10 bg-white/[0.03] px-7 py-3.5 text-base font-medium text-white/75 transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
               >
                 How it works
@@ -171,85 +168,75 @@ export default function LandingPage() {
       {/* ── Live markets table (real order book) ── */}
       <LiveMarkets />
 
-      {/* ── How it works ── */}
-      <section id="how" className="relative scroll-mt-24 px-6 py-28">
+      {/* ── How it works — editorial, big left heading + divided columns ── */}
+      <section id="how" className="relative scroll-mt-24 border-t border-white/[0.06] px-6 py-24">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-14 text-center">
-            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
+          <div className="mb-12 max-w-xl">
+            <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
               How it works
             </p>
-            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
-              Three steps to your first bet
+            <h2 className="font-display text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-5xl">
+              Three steps to
+              <br />
+              your first bet
             </h2>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-3">
+          {/* gap-px over a tinted container paints the hairline dividers between cells */}
+          <div className="grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.07] sm:grid-cols-3">
             {STEPS.map((s) => (
-              <SpotlightCard
-                key={s.step}
-                spotlightColor={s.spotlightColor}
-                className="flex flex-col gap-5 p-7"
-              >
-                {/* Top accent hairline */}
-                <div
-                  className="absolute inset-x-0 top-0 h-px"
-                  style={{ background: `linear-gradient(to right, transparent, ${s.accent}66, transparent)` }}
-                />
+              <div key={s.step} className="flex flex-col gap-5 bg-[#131720] p-7">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-sm font-medium text-white/30">{s.step}</span>
-                  {s.chips && (
-                    <div className="flex gap-1.5 font-mono text-[10px] font-semibold">
-                      {s.chips.map((c) => (
-                        <span key={c} className={DIR_COLOR[c]}>
-                          {c}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <PixelIcon name={s.icon} className="h-8 w-8" style={{ color: ACCENT }} />
+                  <span className="font-mono text-sm font-medium text-white/25">{s.step}</span>
                 </div>
                 <div>
-                  <h3 className="mb-2 font-display text-lg font-bold text-white">{s.title}</h3>
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="font-display text-lg font-bold text-white">{s.title}</h3>
+                    {s.chips && (
+                      <div className="flex gap-1.5 font-mono text-[10px] font-semibold">
+                        {s.chips.map((c) => (
+                          <span key={c} className={DIR_COLOR[c]}>
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <p className="text-sm leading-relaxed text-white/50">{s.body}</p>
                 </div>
-              </SpotlightCard>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Features ── */}
-      <section className="relative px-6 py-24">
+      {/* ── Why Polynuts — same editorial system, four columns ── */}
+      <section className="relative border-t border-white/[0.06] px-6 py-24">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-14 text-center">
-            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
+          <div className="mb-12 max-w-xl">
+            <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
               Why Polynuts
             </p>
-            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
-              Real options under the hood
+            <h2 className="font-display text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-5xl">
+              Real options
+              <br />
+              under the hood
             </h2>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.07] sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map((f) => (
-              <SpotlightCard
-                key={f.title}
-                spotlightColor={f.tint}
-                className="flex flex-col gap-4 p-6"
-              >
-                <div
-                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10"
-                  style={{ background: f.tint }}
-                >
-                  <f.icon className="h-5 w-5 text-white/80" strokeWidth={1.75} />
-                </div>
+              <div key={f.title} className="flex flex-col gap-5 bg-[#131720] p-7">
+                <PixelIcon name={f.icon} className="h-8 w-8" style={{ color: ACCENT }} />
                 <div>
-                  <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/30">
+                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-white/30">
                     {f.kicker}
                   </p>
                   <h3 className="mb-1.5 font-display text-base font-bold text-white">{f.title}</h3>
                   <p className="text-sm leading-relaxed text-white/45">{f.body}</p>
                 </div>
-              </SpotlightCard>
+              </div>
             ))}
           </div>
         </div>
