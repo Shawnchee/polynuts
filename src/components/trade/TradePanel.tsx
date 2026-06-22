@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 import { toast } from 'sonner';
@@ -83,6 +84,7 @@ export function TradePanel({
   const prependActivity = useAppStore((s) => s.prependActivity);
   const setTradeInProgress = useAppStore((s) => s.setTradeInProgress);
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   // Staged trade waiting for explicit user confirm via the 10s modal.
@@ -511,6 +513,13 @@ export function TradePanel({
           queryClient.invalidateQueries({ queryKey: ['tradeHistory', key] }),
         ]);
       }
+
+      // Send the user to their portfolio to see the bet they just placed.
+      // Caches above are invalidated first so /portfolio paints the new
+      // position right away. The success toast is rendered app-level (sonner
+      // <Toaster>), so its "View on Basescan" link survives this client-side
+      // navigation.
+      router.push('/portfolio');
     } catch (err: unknown) {
       const msgText = err instanceof Error ? err.message : '';
       const wasRejection =
