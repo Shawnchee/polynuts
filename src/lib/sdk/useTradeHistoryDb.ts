@@ -20,6 +20,8 @@ export interface DbTradeRow {
   pnl_usdc: number | null;
   is_win: boolean | null;
   settled_at: string | null;
+  /** On-chain payout (close) tx hash — Basescan proof the buyer was paid. */
+  settle_tx_hash: string | null;
 }
 
 interface ApiResponse {
