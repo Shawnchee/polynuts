@@ -136,6 +136,17 @@ export function tradeKey(txHash: string, optionId: string): string {
   return `${(txHash ?? '').toLowerCase().replace(/^0x/, '')}:${(optionId ?? '').toLowerCase()}`;
 }
 
+/**
+ * Canonicalise an indexer tx hash for storage: the Thetanuts indexer returns
+ * hashes WITHOUT the `0x` prefix, but our DB (and Basescan links via txUrl)
+ * expect the `0x`-prefixed form, matching how `trades.tx_hash` is stored from
+ * `receipt.hash`. Returns null for a missing hash so the column stays nullable.
+ */
+function prefixTx(hash: string | null | undefined): string | null {
+  if (!hash) return null;
+  return '0x' + hash.toLowerCase().replace(/^0x/, '');
+}
+
 function findBuyerPosition(
   h: TradeHistory,
   positions: Position[],
@@ -266,6 +277,11 @@ export async function syncSettlementsOnly(
         payout_usdc: payout,
         pnl_usdc: pnl,
         is_win: pnl > 0,
+        // The CLOSE tx is the one that actually transfers the buyer's USDC
+        // payout (verified on-chain: the `settle` tx only records the oracle
+        // price and moves no money to the buyer). This is the "proof I got
+        // paid" link surfaced on settled rows.
+        settle_tx_hash: prefixTx(h.closeTxHash),
         settled_at: new Date(Number(h.closeTimestamp) * 1000).toISOString(),
       };
     })
@@ -373,6 +389,11 @@ export async function syncUserFromIndexer(
         payout_usdc: payout,
         pnl_usdc: pnl,
         is_win: pnl > 0,
+        // The CLOSE tx is the one that actually transfers the buyer's USDC
+        // payout (verified on-chain: the `settle` tx only records the oracle
+        // price and moves no money to the buyer). This is the "proof I got
+        // paid" link surfaced on settled rows.
+        settle_tx_hash: prefixTx(h.closeTxHash),
         settled_at: new Date(Number(h.closeTimestamp) * 1000).toISOString(),
       };
     })
@@ -404,6 +425,8 @@ export interface DbTradeRow {
   pnl_usdc: number | null;
   is_win: boolean | null;
   settled_at: string | null;
+  /** On-chain payout (close) tx hash — Basescan proof the buyer was paid. */
+  settle_tx_hash: string | null;
 }
 
 /**
@@ -434,7 +457,8 @@ export async function readUserTrades(
           payout_usdc,
           pnl_usdc,
           is_win,
-          settled_at
+          settled_at,
+          settle_tx_hash
         )
       `,
     )
@@ -466,6 +490,7 @@ export async function readUserTrades(
       pnl_usdc: s?.pnl_usdc != null ? Number(s.pnl_usdc) : null,
       is_win: typeof s?.is_win === 'boolean' ? s.is_win : null,
       settled_at: (s?.settled_at as string | null) ?? null,
+      settle_tx_hash: (s?.settle_tx_hash as string | null) ?? null,
     };
   });
 }
