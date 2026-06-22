@@ -59,6 +59,8 @@ interface MergedRow {
   realizedPnl?: number;
   status: string;
   txHash?: string;
+  /** On-chain payout (close) tx — Basescan proof the buyer was paid at settlement. */
+  settleTxHash?: string;
 }
 
 // The "History" section of /portfolio: settled outcomes, lifetime PnL, win
@@ -404,7 +406,21 @@ function ActivityTable({
                 )}
               </Td>
               <Td>
-                <StatusBadge row={r} />
+                <div className="flex flex-col items-start gap-1">
+                  <StatusBadge row={r} />
+                  {r.settleTxHash && txUrl(r.settleTxHash) && (
+                    <a
+                      href={txUrl(r.settleTxHash)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="View the on-chain payout transaction on Basescan"
+                      className="inline-flex items-center gap-1 text-xs text-text-dim transition-colors hover:text-text"
+                    >
+                      {(r.realizedPnl ?? 0) > 0 ? 'Payout' : 'Settled'}
+                      <ExternalLink aria-hidden className="h-3 w-3 opacity-70" />
+                    </a>
+                  )}
+                </div>
               </Td>
             </tr>
           ))}
@@ -583,6 +599,9 @@ function mergeRows(
       realizedPnl: realized != null && Number.isFinite(realized) ? realized : undefined,
       status: h.type.toUpperCase(),
       txHash: h.txHash,
+      // The CLOSE tx is the payout transfer (the `settle` tx moves no money to
+      // the buyer); 0x-prefix the indexer's bare hash for the Basescan link.
+      settleTxHash: h.closeTxHash ? '0x' + normTx(h.closeTxHash) : undefined,
     });
   }
 
@@ -675,6 +694,7 @@ function mergeRowsDb(
       realizedPnl: r.pnl_usdc ?? undefined,
       status: settled ? 'SETTLE' : 'FILLED',
       txHash: r.tx_hash,
+      settleTxHash: r.settle_tx_hash ?? undefined,
     });
   }
 
