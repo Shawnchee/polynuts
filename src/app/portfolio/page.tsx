@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
 import { useAccount } from 'wagmi';
@@ -49,7 +49,7 @@ export default function PortfolioPage() {
           count={openPositions.length}
           loading={posLoading}
           empty={<EmptyPositions />}
-          skeleton={<TableSkeleton cols={8} rows={3} />}
+          skeleton={<TableSkeleton cols={7} rows={3} />}
         >
           {openPositions.length > 0 && (
             <PositionsTable rows={openPositions} markOf={markOf} />
@@ -236,7 +236,6 @@ function PositionsTable({
             <Th>Side</Th>
             <Th align="right">Contracts</Th>
             <Th align="right">Cost</Th>
-            <Th align="right">Entry</Th>
             <Th align="right">PnL</Th>
             <Th align="right">Expires</Th>
             <Th>Status</Th>
@@ -290,11 +289,6 @@ function PositionsTable({
                 <Td align="right" mono>
                   {Number.isFinite(mark.premiumUsd) ? fmtUsd(mark.premiumUsd) : '—'}
                 </Td>
-                <Td align="right" mono>
-                  {Number.isFinite(mark.entryPerContractUsd)
-                    ? fmtUsd(mark.entryPerContractUsd, { compact: true })
-                    : '—'}
-                </Td>
                 <Td align="right">
                   <PnlPill amount={mark.unrealizedUsd} percent={mark.unrealizedPct} />
                 </Td>
@@ -302,9 +296,7 @@ function PositionsTable({
                   <Countdown expirySec={p.option.expiry} />
                 </Td>
                 <Td>
-                  <span className="rounded-md bg-bg-subtle px-2 py-0.5 text-xs uppercase text-text-muted">
-                    {p.status}
-                  </span>
+                  <PositionStatus expirySec={p.option.expiry} />
                 </Td>
               </tr>
             );
@@ -312,6 +304,42 @@ function PositionsTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Live status for an open position. Every row here is "open" on-chain, but the
+ * raw indexer status stays a flat "active" even after the betting window has
+ * closed — which read as a contradiction next to the "Closed" countdown
+ * ("why is it closed but still active?"). Once expiry passes the bet is simply
+ * awaiting on-chain settlement, so surface that as "Settling" instead. Ticks
+ * in step with the Countdown so the two columns flip together.
+ */
+function PositionStatus({ expirySec }: { expirySec: number }) {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const settling = Number.isFinite(expirySec) && expirySec - now <= 0;
+  if (settling) {
+    return (
+      <span
+        title="Betting has closed — waiting for the market to settle on-chain"
+        className="inline-flex rounded-md bg-gold/15 px-2 py-0.5 text-xs font-semibold uppercase text-gold"
+      >
+        Settling
+      </span>
+    );
+  }
+  return (
+    <span
+      title="Live position — your P/L moves with the price"
+      className="inline-flex rounded-md bg-brand-light px-2 py-0.5 text-xs font-semibold uppercase text-brand dark:bg-brand/15"
+    >
+      Active
+    </span>
   );
 }
 
