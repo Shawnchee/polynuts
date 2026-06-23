@@ -10,10 +10,15 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "render:demo": "remotion render PolynutsDemo public/demo/polynuts-demo.mp4 --log=verbose",
+    "render:demo:gif": "remotion render PolynutsDemo public/demo/polynuts-demo.gif --codec=gif --width=760 --every-nth-frame=2 --log=verbose"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
+    "@remotion/cli": "4.0.370",
+    "@remotion/google-fonts": "4.0.370",
+    "remotion": "4.0.370",
     "@rainbow-me/rainbowkit": "^2.2.8",
     "@supabase/ssr": "^0.5.1",
     "@supabase/supabase-js": "^2.45.4",
