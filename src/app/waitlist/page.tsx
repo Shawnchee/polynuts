@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { PixelIcon } from '@/components/landing/PixelIcon';
 import { WaitlistForm } from '@/components/waitlist/WaitlistForm';
 
@@ -33,16 +34,60 @@ function Backdrop() {
   );
 }
 
+/**
+ * A product screenshot framed as a browser window — top chrome with traffic
+ * lights + a faux URL, the shot, then a caption. Screenshots are 2560×1600
+ * (dark-mode app captures); next/image scales + lazy-loads them.
+ */
+function BrowserFrame({
+  src,
+  alt,
+  url,
+  caption,
+  priority = false,
+  sizes,
+}: {
+  src: string;
+  alt: string;
+  url: string;
+  caption: string;
+  priority?: boolean;
+  sizes: string;
+}) {
+  return (
+    <figure className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] shadow-2xl shadow-black/40">
+      <div className="flex items-center gap-1.5 border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="ml-3 truncate font-mono text-[11px] text-white/30">{url}</span>
+      </div>
+      <Image
+        src={src}
+        alt={alt}
+        width={2560}
+        height={1600}
+        priority={priority}
+        sizes={sizes}
+        className="h-auto w-full"
+      />
+      <figcaption className="border-t border-white/[0.06] px-4 py-3 font-mono text-xs text-white/40">
+        {caption}
+      </figcaption>
+    </figure>
+  );
+}
+
 export const metadata: Metadata = {
   title: 'Join the waitlist',
   description:
-    'Be first to bet PUMP or DUMP on crypto, on-chain. Join the Polynuts waitlist for early access.',
+    'The Polymarket of crypto options. Bet PUMP or DUMP on ETH & BTC, on-chain. Join the Polynuts waitlist for early access.',
   // Live host today is polynuts.vercel.app; swap these to
   // https://join.polynuts.xyz once the custom domain is added.
   alternates: { canonical: 'https://polynuts.vercel.app/waitlist' },
   openGraph: {
-    title: 'Join the Polynuts waitlist',
-    description: 'Be first to bet PUMP or DUMP on crypto, on-chain.',
+    title: 'Polynuts — the Polymarket of crypto options',
+    description: 'Bet PUMP or DUMP on ETH & BTC, on-chain. Join the waitlist for early access.',
     url: 'https://polynuts.vercel.app/waitlist',
   },
   // Pre-launch capture page — keep it out of the index.
@@ -93,7 +138,7 @@ export default function WaitlistPage() {
           <div className="flex flex-col items-start gap-7 text-left">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-white/55">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
-              Built on Base · launching soon
+              The Polymarket of crypto options
             </div>
 
             <h1 className="font-display text-[clamp(2.4rem,6vw,4rem)] font-extrabold leading-[0.98] tracking-[-0.03em]">
@@ -104,12 +149,13 @@ export default function WaitlistPage() {
             </h1>
 
             <p className="max-w-md text-base leading-relaxed text-white/55 sm:text-lg">
-              Polynuts lets you bet whether BTC or ETH will pump, dump, or range
-              — fixed risk, instant on-chain settlement, no custody. Join the
-              waitlist and we&apos;ll email you the second it&apos;s live.
+              Like Polymarket — but for options. Bet whether BTC or ETH will
+              pump, dump, or range: fixed risk, instant on-chain settlement, no
+              custody. Join the waitlist and we&apos;ll email you the second
+              it&apos;s live.
             </p>
 
-            <div className="w-full max-w-md">
+            <div id="join" className="w-full max-w-md scroll-mt-28">
               <WaitlistForm />
             </div>
           </div>
@@ -125,6 +171,69 @@ export default function WaitlistPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Teaser: a peek inside the live product ── */}
+      <section className="relative border-t border-white/[0.06] px-6 py-24">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-12 max-w-xl">
+            <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
+              A peek inside
+            </p>
+            <h2 className="font-display text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-5xl">
+              The product is built.
+              <br />
+              You&apos;re early to the door.
+            </h2>
+            <p className="mt-4 max-w-md text-base leading-relaxed text-white/50">
+              Real markets, real on-chain settlement — running on Base right now.
+              The waitlist just gets you in first.
+            </p>
+          </div>
+
+          {/* Featured shot — the markets surface. */}
+          <BrowserFrame
+            src="/teasers/markets.png"
+            alt="Polynuts markets page — a grid of live BTC and ETH options with real-time odds and a live on-chain fills feed"
+            url="polynuts.xyz/markets"
+            caption="Live markets — 240+ BTC & ETH options, real-time odds, on-chain fills"
+            priority
+            sizes="(max-width: 1024px) 100vw, 1024px"
+          />
+
+          {/* Two-up — the bet ticket + the leaderboard. */}
+          <div className="mt-6 grid gap-6 sm:grid-cols-2">
+            <BrowserFrame
+              src="/teasers/trade.png"
+              alt="Polynuts bet ticket — choose a stake and see your exact USDC payout and implied probability"
+              url="polynuts.xyz/markets"
+              caption="One-tap bets — pick a stake, see your exact payout"
+              sizes="(max-width: 640px) 100vw, 512px"
+            />
+            <BrowserFrame
+              src="/teasers/leaderboard.png"
+              alt="Polynuts leaderboard — recent trades and per-trader rankings by realized PnL"
+              url="polynuts.xyz/leaderboard"
+              caption="On-chain leaderboard — every fill, ranked by PnL"
+              sizes="(max-width: 640px) 100vw, 512px"
+            />
+          </div>
+
+          {/* Closing CTA back up to the form. */}
+          <div className="mt-14 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="font-display text-xl font-bold text-white">
+              Want in before everyone else?
+            </p>
+            <a
+              href="#join"
+              className="group press-scale inline-flex items-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-[#131720] transition-all hover:brightness-110"
+              style={{ background: ACCENT }}
+            >
+              Join the waitlist
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </a>
           </div>
         </div>
       </section>
