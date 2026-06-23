@@ -25,8 +25,8 @@ export function TopNav({ active = '/' }: { active?: string }) {
 
   return (
     <header className="sticky top-0 z-30 glass border-b border-line">
-      <div className="mx-auto flex h-14 max-w-page items-center justify-between px-4 sm:px-6">
-        <div className="flex items-center gap-8">
+      <div className="mx-auto flex h-14 max-w-page items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="flex items-center gap-6 lg:gap-8">
           <Link
             href="/"
             aria-label="Polynuts home"
@@ -62,7 +62,7 @@ export function TopNav({ active = '/' }: { active?: string }) {
             })}
           </nav>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <ChainStatusChip />
           {feedbackReady && (
             <button
@@ -76,7 +76,7 @@ export function TopNav({ active = '/' }: { active?: string }) {
             </button>
           )}
           {isConnected && bal && (
-            <div className="hidden items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 sm:flex">
+            <div className="hidden items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 lg:flex">
               <span className="label text-text-dim">USDC</span>
               <span className="num text-sm font-semibold text-text">
                 {Number(bal.formatted).toLocaleString('en-US', {
