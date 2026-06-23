@@ -217,7 +217,7 @@ function HeroCard({
             <span className="num font-semibold text-text">
               {safeUsd(volume, { compact: true })}
             </span>{' '}
-            vol
+            liq
           </span>
           {safeMult(multiplier) != null && (
             <span className="tabular-nums">
