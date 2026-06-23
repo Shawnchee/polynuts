@@ -132,6 +132,14 @@ body::before {
     radial-gradient(circle at 90% 105%, rgba(167, 139, 250, 0.08), transparent 45%);
 }
 
+/* On the landing page the candlestick motif carries the texture, so the
+   generic corner glow is killed here (the user dislikes the "glow"). Scoped
+   via :has() to the landing root only — in-app pages (/markets, /portfolio …)
+   keep their ambient bloom untouched. */
+body:has(.landing-page)::before {
+  display: none;
+}
+
 /* Bricolage Grotesque is the display/brand face for headings; body stays on
    Inter. Tracking is left to the per-size fontSize tokens (which already
    tighten the larger steps), so this only swaps the family. */
@@ -257,7 +265,10 @@ a:focus-visible,
   /* ── Landing-page surface textures ───────────────────────────────────────
      A faint blueprint grid + soft top vignette replace the old WebGL aurora.
      The grid is a flat CSS background (no blur, no rainbow), masked so it
-     fades toward the edges and never competes with foreground content. */
+     fades toward the edges and never competes with foreground content.
+
+     NOTE: superseded by the <HeroBackground> candlestick motif (.hero-motif).
+     Kept only so any lingering reference degrades gracefully. */
   .grid-bg {
     background-image:
       linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
@@ -265,6 +276,43 @@ a:focus-visible,
     background-size: 64px 64px;
     -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
     mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+  }
+
+  /* ── Product-tied price motif (HeroBackground canvas) ─────────────────────
+     The texture IS the product: a faint, drifting candlestick / price-line
+     field rendered to <canvas>. The wrapper sits absolute inset-0 behind the
+     z-10 hero content and is masked so the field dissolves toward every edge
+     AND under the left text column — it never fights the headline or the
+     HeroAppPreview window on the right.
+
+     Mask = radial vignette (soft at edges) INTERSECTED with a horizontal
+     gradient that punches the field down on the left third where the copy
+     lives. CSS masks composite by multiplication when two images are listed,
+     so the darker of the two wins per-pixel. */
+  .hero-motif {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    -webkit-mask-image:
+      radial-gradient(120% 90% at 70% 60%, #000 18%, transparent 72%),
+      linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.35) 30%, #000 52%);
+    mask-image:
+      radial-gradient(120% 90% at 70% 60%, #000 18%, transparent 72%),
+      linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.35) 30%, #000 52%);
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+  }
+
+  /* CTA variant: small centered panel, so the field is a quiet symmetric band
+     that fades on all four sides — no directional copy-clearing needed. */
+  .hero-motif-cta {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    -webkit-mask-image: radial-gradient(80% 120% at 50% 100%, #000 5%, transparent 70%);
+    mask-image: radial-gradient(80% 120% at 50% 100%, #000 5%, transparent 70%);
   }
   /* Hairline divider that fades at both ends — used between sections. */
   .rule-fade {

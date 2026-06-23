@@ -7,6 +7,8 @@ import { LandingStats } from '@/components/landing/LandingStats';
 import { LiveMarkets } from '@/components/landing/LiveMarkets';
 import { SpotTicker } from '@/components/landing/SpotTicker';
 import { HeroAppPreview } from '@/components/landing/HeroAppPreview';
+import { HeroBackground } from '@/components/landing/HeroBackground';
+import { HeroDemo } from '@/components/landing/HeroDemo';
 
 const ACCENT = '#60a5fa';
 
@@ -68,7 +70,7 @@ const FEATURES = [
 
 export default function LandingPage() {
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#131720] text-white antialiased">
+    <div className="landing-page relative min-h-screen overflow-x-hidden bg-[#131720] text-white antialiased">
 
       {/* ── Top nav ── */}
       <header className="fixed top-0 z-50 w-full border-b border-white/[0.06] bg-[#131720]/70 backdrop-blur-xl">
@@ -94,8 +96,10 @@ export default function LandingPage() {
 
       {/* ── Hero ── */}
       <section className="relative flex min-h-[100svh] items-center overflow-hidden px-6 pb-16 pt-28">
-        {/* Flat blueprint grid — replaces the WebGL aurora. No glow. */}
-        <div className="pointer-events-none absolute inset-0 grid-bg" />
+        {/* Product-tied price motif — a faint drifting candlestick / price-line
+            field. The texture IS the product (a trading surface). Masked so it
+            fades at the edges and under the copy column. */}
+        <HeroBackground />
 
         <div className="relative z-10 mx-auto grid w-full max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
           {/* Copy — left-aligned, asymmetric. Centered-everything is the #1 AI-slop tell. */}
@@ -158,6 +162,25 @@ export default function LandingPage() {
           {/* Product-as-hero — the real markets surface, live, framed as an app window. */}
           <div className="w-full lg:pl-4">
             <HeroAppPreview />
+          </div>
+        </div>
+      </section>
+
+      {/* ── See it in action — the rendered product walkthrough (Remotion) ── */}
+      <section className="relative border-t border-white/[0.06] px-6 py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-10 max-w-xl">
+            <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
+              See it in action
+            </p>
+            <h2 className="font-display text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-5xl">
+              One bet, start
+              <br />
+              to settled
+            </h2>
+          </div>
+          <div className="mx-auto max-w-4xl">
+            <HeroDemo />
           </div>
         </div>
       </section>
@@ -246,7 +269,8 @@ export default function LandingPage() {
       <section className="relative px-6 py-28">
         <div className="mx-auto max-w-4xl">
           <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] px-8 py-16 text-center">
-            <div className="pointer-events-none absolute inset-0 grid-bg opacity-70" />
+            {/* Quiet static version of the same motif — coherent with the hero. */}
+            <HeroBackground variant="cta" />
             <div
               className="pointer-events-none absolute inset-x-0 top-0 h-px"
               style={{ background: `linear-gradient(to right, transparent, ${ACCENT}99, transparent)` }}

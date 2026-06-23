@@ -30,7 +30,7 @@ function HeaderRow() {
     >
       <span>Market</span>
       <span className="text-right">Bet</span>
-      <span className="hidden text-right sm:block">Volume</span>
+      <span className="hidden text-right sm:block">Liquidity</span>
       <span className="w-16 text-right">Expiry</span>
     </div>
   );

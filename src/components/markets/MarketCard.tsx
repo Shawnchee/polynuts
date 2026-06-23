@@ -160,13 +160,13 @@ export function MarketCard({
         </div>
       )}
 
-      {/* Meta strip — volume + expiry */}
+      {/* Meta strip — liquidity (available order capacity) + expiry */}
       <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-xs text-text-muted">
         <span className="num tabular-nums">
           <span className="num font-semibold text-text">
             {safeUsd(volume, { compact: true })}
           </span>{' '}
-          vol
+          liq
         </span>
         <TimerBadge expirySec={market.expiry} />
       </div>
