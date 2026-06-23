@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { Position, TradeHistory as TradeHistoryEntry } from '@thetanuts-finance/thetanuts-client';
@@ -71,12 +71,39 @@ export function TradeHistory() {
   const { address, isConnected } = useAccount();
   const useDb = dbBacked();
 
-  const { data: positions = [], isLoading: posLoading } = usePositions();
-  const { data: indexerHistory = [], isLoading: indexerHistLoading } = useTradeHistory();
-  const { data: dbRows = [], isLoading: dbLoading } = useTradeHistoryDb();
+  const {
+    data: positions = [],
+    isLoading: posLoading,
+    isFetching: posFetching,
+    refetch: refetchPositions,
+  } = usePositions();
+  const {
+    data: indexerHistory = [],
+    isLoading: indexerHistLoading,
+    isFetching: indexerHistFetching,
+    refetch: refetchIndexerHistory,
+  } = useTradeHistory();
+  const {
+    data: dbRows = [],
+    isLoading: dbLoading,
+    isFetching: dbFetching,
+    refetch: refetchDb,
+  } = useTradeHistoryDb();
   const markOf = usePositionMarks();
 
   const [filter, setFilter] = useState<ActivityFilter>('all');
+
+  // Manual refresh for the History section. Positions + history auto-refetch on
+  // an interval, but a fresh fill or settlement can land between ticks — this
+  // pulls the latest on demand. Refetch positions (always shown) plus whichever
+  // history source is active (DB-backed vs. indexer). Spin/disable while any of
+  // the active queries is in flight to avoid hammering the indexer/API.
+  const refreshing = posFetching || (useDb ? dbFetching : indexerHistFetching);
+  const handleRefresh = useCallback(() => {
+    void refetchPositions();
+    if (useDb) void refetchDb();
+    else void refetchIndexerHistory();
+  }, [useDb, refetchPositions, refetchDb, refetchIndexerHistory]);
 
   const summary = useMemo<ActivitySummary>(() => {
     if (useDb) return summaryFromDbRows(dbRows);
@@ -149,7 +176,8 @@ export function TradeHistory() {
 
       <PnlCalendar entries={calendarEntries} />
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <RefreshButton busy={refreshing} onClick={handleRefresh} />
         <div
           className="flex items-center gap-1 rounded-md border border-line bg-bg-elev p-1"
           role="tablist"
@@ -284,6 +312,26 @@ function SummarySkeleton() {
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * Manual refresh for the History section. Matches the open-positions table's
+ * RefreshButton (portfolio/page.tsx): spins + disables while a fetch is in
+ * flight to avoid hammering the indexer / DB API.
+ */
+function RefreshButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      aria-busy={busy}
+      title="Refresh history"
+      className="press-scale inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <RefreshCw aria-hidden className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
+      {busy ? 'Refreshing…' : 'Refresh'}
+    </button>
   );
 }
 
