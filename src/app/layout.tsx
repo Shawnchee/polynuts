@@ -57,10 +57,9 @@ export const metadata: Metadata = {
     'Thetanuts',
     'on-chain betting',
   ],
-  icons: {
-    icon: '/icon.svg',
-    apple: '/apple-icon.png',
-  },
+  // Favicons come from the App Router file convention: src/app/icon.png and
+  // src/app/apple-icon.png are auto-served and auto-linked. (A raster PNG renders
+  // reliably everywhere; an SVG embedding a raster image does not.)
   openGraph: {
     title: 'Polynuts — Bet on crypto, on-chain',
     description: 'Bet PUMP or DUMP on crypto. Real options under the hood.',
