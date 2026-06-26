@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tradeKey } from '@/lib/supabase/sync';
+import { tradeKey } from '@/lib/txKey';
 
 // Regression guard for the settlement-sync join bug: the DB stores tx hashes
 // WITH the `0x` prefix and option_id lowercased, while the Thetanuts indexer

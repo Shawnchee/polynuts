@@ -2,17 +2,11 @@
 
 import { getReadClient } from './clients';
 
-/**
- * Canonicalise a tx hash for cross-source comparison. The Thetanuts indexer
- * returns hashes WITHOUT the `0x` prefix (e.g. `643fec…`) while our Supabase
- * rows store ethers' `receipt.hash` WITH it (`0x643fec…`). Lowercasing alone
- * never makes them equal, which silently broke the position↔DB premium join
- * and the fill-vs-position dedup. Strip the prefix + lowercase so both sides
- * key identically.
- */
-export function normTx(hash: string | null | undefined): string {
-  return (hash ?? '').toLowerCase().replace(/^0x/, '');
-}
+// `normTx` is defined in src/lib/txKey.ts (a shared, directive-free module) and
+// re-exported here so existing `@/lib/sdk/explorer` importers are untouched.
+// Server code (sync.ts) imports the SAME function from txKey directly, so both
+// sides canonicalise tx hashes identically and can't drift apart.
+export { normTx } from '@/lib/txKey';
 
 /**
  * Block-explorer transaction URL for a tx hash on the active chain
