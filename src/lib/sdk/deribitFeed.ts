@@ -130,21 +130,39 @@ export function startDeribitFeed(onPrice: PriceHandler): FeedHandle {
 
   function scheduleReconnect() {
     if (stopped) return;
-    if (attempt >= MAX_RECONNECT_ATTEMPTS) return;
+    // Keep retrying indefinitely (the caller closes the feed when the tab is
+    // hidden, so this only loops while the page is visible). Previously we gave
+    // up after MAX_RECONNECT_ATTEMPTS, which left a continuously-open tab with
+    // NO live prices for the rest of the session after a long network blip. The
+    // backoff caps at RECONNECT_MAX_MS, so steady state is a quiet ~30s retry.
     const backoff = Math.min(
       RECONNECT_MAX_MS,
-      RECONNECT_BASE_MS * 2 ** attempt
+      RECONNECT_BASE_MS * 2 ** Math.min(attempt, MAX_RECONNECT_ATTEMPTS)
     );
     const jitter = Math.random() * 250;
     attempt += 1;
     reconnectTimer = setTimeout(connect, backoff + jitter);
   }
 
+  // When the browser regains connectivity, reconnect immediately instead of
+  // waiting out the (up to ~30s) backoff — fast price recovery after a blip.
+  function onOnline() {
+    if (stopped || ws) return;
+    attempt = 0;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    connect();
+  }
+  window.addEventListener('online', onOnline);
+
   connect();
 
   return {
     close() {
       stopped = true;
+      window.removeEventListener('online', onOnline);
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;

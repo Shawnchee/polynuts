@@ -36,6 +36,11 @@ import { startDeribitFeed } from './deribitFeed';
 // feed via the trade panel's local prependActivity().
 const ACTIVITY_LOOKBACK_BLOCKS = 9;
 const ACTIVITY_POLL_MS = 90_000;
+// Cap the dedup set so a long-lived session on a paid RPC (where polling never
+// self-disables) can't grow it without bound. The feed only renders the 30
+// newest, so keeping the last SEEN_CAP ids is far more than enough to dedup
+// across polls.
+const SEEN_CAP = 500;
 
 export function useLiveFeed() {
   const setPrice = useAppStore((s) => s.setPrice);
@@ -78,6 +83,13 @@ export function useLiveFeed() {
             kind: 'filled',
             question: `Fill — taker ${ev.taker.slice(0, 6)}…${ev.taker.slice(-4)}`,
           });
+        }
+        // Bound the dedup set (Sets preserve insertion order, so slicing keeps
+        // the most recent ids) — see SEEN_CAP.
+        if (seenTxsRef.current.size > SEEN_CAP) {
+          seenTxsRef.current = new Set(
+            Array.from(seenTxsRef.current).slice(-SEEN_CAP),
+          );
         }
       } catch (err) {
         // Free-tier RPC rate limit (Alchemy/QuickNode/etc) — disable
