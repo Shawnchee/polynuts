@@ -29,8 +29,10 @@ export function useMarkets(): {
   isLoading: boolean;
   error: unknown;
   refetch: () => void;
+  /** ms timestamp of the last successful order-book fetch (0 before first). */
+  dataUpdatedAt: number;
 } {
-  const { data: orders, isLoading, error, refetch } = useOrders();
+  const { data: orders, isLoading, error, refetch, dataUpdatedAt } = useOrders();
   const client = getReadClient();
   const config = client.chainConfig;
 
@@ -43,7 +45,7 @@ export function useMarkets(): {
       .filter((m): m is MarketView => m !== null);
   }, [orders, config]);
 
-  return { markets, isLoading, error, refetch };
+  return { markets, isLoading, error, refetch, dataUpdatedAt };
 }
 
 export function useMarketData() {

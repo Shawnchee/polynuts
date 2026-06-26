@@ -547,7 +547,9 @@ export function TradePanel({
       if (key) {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['positions', key] }),
-          queryClient.invalidateQueries({ queryKey: ['tradeHistory', key] }),
+          // DB-backed history query key (the indexer ['tradeHistory'] query was
+          // removed when history consolidated to Supabase-only).
+          queryClient.invalidateQueries({ queryKey: ['me-trades', key] }),
         ]);
       }
 
@@ -571,11 +573,31 @@ export function TradePanel({
         return;
       }
       console.error('[polynuts] confirmAndFillBet error', err);
+
+      // Stale-quote failures: the maker's signed order was taken, expired, or
+      // repriced between staging the bet and submitting it. Pull a fresh order
+      // book so the panel + markets grid show live quotes, then ask the user to
+      // review and retry — rather than leaving them re-submitting a dead order.
+      // This is the "quotes are refreshing, try again" moment: the 30s poll
+      // pauses mid-trade, so a stale quote only ever surfaces here, at submit.
+      //
+      // Scoped to the two recoverable classes ONLY. A generic ContractRevertError
+      // is the SDK's residual bucket for every OTHER revert (paused contract,
+      // settlement race, deadline, math/overflow) — a refresh won't fix those,
+      // so it keeps its specific reason in the chain below instead of inviting a
+      // futile retry loop.
+      if (err instanceof OrderExpiredError || err instanceof SlippageExceededError) {
+        void queryClient.invalidateQueries({ queryKey: ['orders'] });
+        toast.error('Quotes updated — review your bet and try again.', {
+          id: t,
+          duration: 6000,
+        });
+        return;
+      }
+
       let msg = 'Transaction failed';
-      if (err instanceof OrderExpiredError) msg = 'Market closed — pick a fresh one';
-      else if (err instanceof InsufficientAllowanceError) msg = 'Approval needed — try again';
+      if (err instanceof InsufficientAllowanceError) msg = 'Approval needed — try again';
       else if (err instanceof InsufficientBalanceError) msg = 'Insufficient USDC balance';
-      else if (err instanceof SlippageExceededError) msg = 'Price moved, try again';
       else if (err instanceof RateLimitError) msg = 'Rate limited — try again in a moment';
       else if (err instanceof NetworkUnsupportedError) msg = 'Please switch to Base';
       else if (err instanceof SignerRequiredError) msg = 'Connect your wallet';

@@ -32,7 +32,7 @@ const FEATURED_COUNT = 10;
 const FEATURED_MIN = 2;
 
 export default function MarketsPage() {
-  const { markets, isLoading, error, refetch } = useMarkets();
+  const { markets, isLoading, error, refetch, dataUpdatedAt } = useMarkets();
   const filter = useAppStore((s) => s.filter);
   const sort = useAppStore((s) => s.sort);
   const expiryFilter = useAppStore((s) => s.expiryFilter);
@@ -204,6 +204,12 @@ export default function MarketsPage() {
               />
             )}
 
+            {!isLoading && !error && filtered.length > 0 && (
+              <div className="flex items-center justify-end">
+                <QuotesFreshness updatedAt={dataUpdatedAt} />
+              </div>
+            )}
+
             {!isLoading && featured.length > 0 && (
               <FeaturedHero
                 markets={featured}
@@ -270,6 +276,60 @@ export default function MarketsPage() {
       </main>
       <BottomNav />
     </div>
+  );
+}
+
+/**
+ * Subtle freshness indicator for the order book. The grid auto-refreshes every
+ * 30s (paused mid-trade); this gives passive awareness that quotes are live and
+ * briefly highlights green when a fresh book lands — no toast spam while
+ * browsing. The explicit "quotes updated, retry" toast only fires at the trade
+ * moment, when a fill fails on a stale quote (see TradePanel).
+ */
+function QuotesFreshness({ updatedAt }: { updatedAt: number }) {
+  const [, force] = useState(0);
+  const [flash, setFlash] = useState(false);
+  const first = useRef(true);
+
+  // Keep the relative "updated Ns ago" label roughly current.
+  useEffect(() => {
+    const id = setInterval(() => force((n) => n + 1), 5_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Brief green highlight whenever a newer book lands (updatedAt advances).
+  // Skip the first mount so it doesn't flash on initial load.
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setFlash(true);
+    const id = setTimeout(() => setFlash(false), 1_200);
+    return () => clearTimeout(id);
+  }, [updatedAt]);
+
+  if (!updatedAt) return null;
+  const secs = Math.max(0, Math.round((Date.now() - updatedAt) / 1000));
+  const ago =
+    secs < 5 ? 'just now' : secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`;
+
+  return (
+    <span
+      title="The order book refreshes every 30 seconds"
+      className={cn(
+        'inline-flex items-center gap-1.5 text-xs tabular-nums transition-colors duration-500',
+        flash ? 'text-pump dark:text-pump-dark' : 'text-text-dim'
+      )}
+    >
+      <span
+        className={cn(
+          'h-1.5 w-1.5 rounded-full transition-colors duration-500',
+          flash ? 'bg-pump dark:bg-pump-dark' : 'bg-text-dim'
+        )}
+      />
+      Quotes updated {ago}
+    </span>
   );
 }
 
