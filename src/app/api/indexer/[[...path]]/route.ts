@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 // Same-origin proxy for the Thetanuts indexer (a.k.a. state/book API). The SDK
 // reads user positions/history (`*FromIndexer`) and protocol/daily stats
@@ -24,7 +25,14 @@ const SHARED_CACHE = 'public, s-maxage=3, stale-while-revalidate=10';
 
 const UPSTREAM_TIMEOUT_MS = 15_000;
 
+// Generous per-IP cap (tunable) — bounds a cache-busting flood of this open
+// relay without throttling legit per-wallet polling.
+const PROXY_RATE_LIMIT = 1_200;
+const PROXY_RATE_WINDOW_MS = 60_000;
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  const limited = enforceRateLimit(req, 'indexer', PROXY_RATE_LIMIT, PROXY_RATE_WINDOW_MS);
+  if (limited) return limited;
   const { path } = await ctx.params;
   // The SDK builds absolute browser URLs like
   //   {origin}/api/indexer/api/v1/book/stats/daily   (stateApiUrl)

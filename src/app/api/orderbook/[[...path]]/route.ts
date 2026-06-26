@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 // Same-origin proxy for the Thetanuts MM offchain order book (the "Odette"
 // worker). The SDK's `client.api` (fetchOrders / getMarketData) fetches this
@@ -21,7 +22,17 @@ const CACHE = 'public, s-maxage=3, stale-while-revalidate=10';
 
 const UPSTREAM_TIMEOUT_MS = 15_000;
 
+// Generous per-IP cap (tunable). Bounds a cache-busting flood of this open
+// relay without throttling legit polling, which is mostly served from the CDN
+// cache above and never invokes this function. No path allowlist: scheme+host
+// are hardcoded so this can't be repointed at another host, and the SDK's exact
+// path set isn't pinned here — the rate limit is what bounds abuse.
+const PROXY_RATE_LIMIT = 1_200;
+const PROXY_RATE_WINDOW_MS = 60_000;
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  const limited = enforceRateLimit(req, 'orderbook', PROXY_RATE_LIMIT, PROXY_RATE_WINDOW_MS);
+  if (limited) return limited;
   const { path } = await ctx.params;
   // fetchOrders / getMarketData hit the worker root ("/"); filterOrders hits
   // "/orders". The optional catch-all preserves whichever subpath the SDK used.
