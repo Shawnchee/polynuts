@@ -21,6 +21,53 @@ const blocked = new Set(
     .filter(Boolean)
 );
 
+// ─── Pre-launch ("coming soon") gate ────────────────────────────────────────
+// While LAUNCH_MODE is on, every visitor is funneled to /waitlist and the rest
+// of the site (landing + app) stays hidden. Flip LAUNCH_MODE off (or unset) and
+// redeploy to open everything on launch day. Read per-request (not a module
+// const) so it's trivially testable and reflects env without code changes.
+//
+// The owner can still preview the real, locked site: hitting any URL with
+// `?preview=<LAUNCH_PREVIEW_SECRET>` sets an httpOnly bypass cookie (and strips
+// the secret from the URL). /admin is always reachable regardless — it has its
+// own password gate.
+const PREVIEW_COOKIE = 'pn_preview';
+const PRELAUNCH_VALUES = new Set(['waitlist', 'prelaunch', 'coming-soon', '1', 'true', 'on']);
+
+function isPrelaunch(): boolean {
+  return PRELAUNCH_VALUES.has((process.env.LAUNCH_MODE ?? '').trim().toLowerCase());
+}
+
+function previewSecret(): string {
+  return process.env.LAUNCH_PREVIEW_SECRET ?? '';
+}
+
+/** Constant-time-ish string compare (edge runtime — no node:crypto here). */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function hasPreviewBypass(req: NextRequest): boolean {
+  const secret = previewSecret();
+  if (!secret) return false;
+  const cookie = req.cookies.get(PREVIEW_COOKIE)?.value;
+  return !!cookie && safeEqual(cookie, secret);
+}
+
+/** Paths that stay reachable even while the coming-soon gate is up. */
+function allowedDuringPrelaunch(pathname: string): boolean {
+  return (
+    pathname === '/waitlist' ||
+    pathname.startsWith('/admin') || // own password gate; owner needs it pre-launch
+    pathname.startsWith('/api') || // waitlist/feedback/admin endpoints + OG images
+    pathname === '/not-available' ||
+    pathname.includes('.') // static asset (has an extension)
+  );
+}
+
 /**
  * The pre-launch waitlist lives at the `/waitlist` route inside this same app,
  * but we serve it as the front door of a separate-looking host
@@ -58,6 +105,40 @@ export function proxy(req: NextRequest) {
     url.pathname = '/not-available';
     url.search = `?from=${encodeURIComponent(country)}`;
     return NextResponse.redirect(url, { status: 307 });
+  }
+
+  // Pre-launch gate. Only relevant while LAUNCH_MODE is on.
+  if (isPrelaunch()) {
+    // `?preview=<secret>` toggles the owner bypass cookie, then redirects to a
+    // clean URL so the secret never lingers in history/logs.
+    const preview = req.nextUrl.searchParams.get('preview');
+    if (preview !== null) {
+      const url = req.nextUrl.clone();
+      url.searchParams.delete('preview');
+      const res = NextResponse.redirect(url);
+      const secret = previewSecret();
+      if (secret && safeEqual(preview, secret)) {
+        res.cookies.set(PREVIEW_COOKIE, preview, {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          path: '/',
+          maxAge: 7 * 24 * 60 * 60, // 7 days
+        });
+      } else {
+        res.cookies.set(PREVIEW_COOKIE, '', { path: '/', maxAge: 0 });
+      }
+      return res;
+    }
+
+    // Everyone without a valid bypass cookie sees the waitlist (except the
+    // always-allowed paths above).
+    if (!hasPreviewBypass(req) && !allowedDuringPrelaunch(req.nextUrl.pathname)) {
+      const url = req.nextUrl.clone();
+      url.pathname = '/waitlist';
+      url.search = '';
+      return NextResponse.rewrite(url);
+    }
   }
 
   // Waitlist subdomain front door. Skip the route itself, API routes, and any
