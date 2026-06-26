@@ -59,6 +59,7 @@ export const metadata: Metadata = {
   ],
   icons: {
     icon: '/icon.svg',
+    apple: '/apple-icon.png',
   },
   openGraph: {
     title: 'Polynuts — Bet on crypto, on-chain',

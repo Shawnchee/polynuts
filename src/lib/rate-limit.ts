@@ -1,4 +1,4 @@
-import type { NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 
 // ─── Lightweight in-memory rate limiter ─────────────────────────────────────
 // A dependency-free sliding-window limiter keyed by client IP. It exists to
@@ -70,6 +70,26 @@ export function clientIp(req: NextRequest): string {
   const xff = req.headers.get('x-forwarded-for');
   if (xff) return xff.split(',')[0]!.trim();
   return req.headers.get('x-real-ip') ?? 'local';
+}
+
+/**
+ * Route-handler convenience: enforce a per-IP limit on `bucket` and return a
+ * ready-to-send 429 (with `Retry-After`) when it's exceeded, or `null` to let
+ * the handler proceed. Mirrors the inline guard in /api/me/trades so the public
+ * write routes (/api/waitlist, /api/feedback) share one implementation.
+ */
+export function enforceRateLimit(
+  req: NextRequest,
+  bucket: string,
+  limit: number,
+  windowMs: number,
+): NextResponse | null {
+  const { allowed, retryAfterMs } = rateLimit(`${bucket}:${clientIp(req)}`, limit, windowMs);
+  if (allowed) return null;
+  return NextResponse.json(
+    { error: 'rate limit exceeded' },
+    { status: 429, headers: { 'Retry-After': String(Math.ceil(retryAfterMs / 1000)) } },
+  );
 }
 
 /** Test-only: clear all limiter state for deterministic assertions. */

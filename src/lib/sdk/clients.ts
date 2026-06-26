@@ -90,6 +90,17 @@ if (REFERRER_MISSING) {
   }
 }
 
+// ── Partner fee broker (opt-in) ─────────────────────────────────────────────
+// When NEXT_PUBLIC_PARTNER_BROKER_ADDRESS points at a deployed PartnerFeeBroker,
+// fills route THROUGH that broker (tx sent to the broker, broker approved for
+// premium + fee) instead of straight to OptionBook, so the broker skims its
+// immutable feeBps and forwards the position to the taker. Left unset (or zero)
+// the app keeps the default OptionBook path — taker pays premium only, no added
+// fee. Deliberate opt-in: production stays no-taker-fee unless this is set.
+const PARTNER_BROKER = process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS;
+export const PARTNER_BROKER_ADDRESS =
+  PARTNER_BROKER && PARTNER_BROKER.toLowerCase() !== ZERO_ADDR ? PARTNER_BROKER : null;
+
 let _readClient: ThetanutsClient | null = null;
 
 export function getReadClient(): ThetanutsClient {

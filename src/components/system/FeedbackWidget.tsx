@@ -11,18 +11,14 @@ import { usePathname } from 'next/navigation';
 import { MessageSquarePlus, X } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { toast } from 'sonner';
-import {
-  getSupabaseBrowser,
-  hasSupabaseConfigClient,
-} from '@/lib/supabase/browser';
+import { hasSupabaseConfigClient } from '@/lib/supabase/browser';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
 
 /**
- * Feedback modal form. Submissions go straight into public.feedback via the
- * anon browser client — the table's RLS allows anon INSERT but no public
- * SELECT, so this is a write-only channel; the project owner reads rows in the
- * Supabase dashboard.
+ * Feedback modal form. Submissions go to the server route /api/feedback, which
+ * validates + rate-limits and writes with the service role. This is a
+ * write-only channel; the project owner reads rows in the Supabase dashboard.
  *
  * The trigger lives in two places: a floating bottom-right button on desktop
  * (hidden on mobile so it doesn't cover the bottom tab bar) and a button in the
@@ -126,17 +122,20 @@ export function FeedbackWidget() {
 
     setPending(true);
     try {
-      const supabase = getSupabaseBrowser();
-      const { error } = await supabase.from('feedback').insert({
-        message: trimmed.slice(0, 2000),
-        category: category || null,
-        email: email.trim() || null,
-        wallet_address: address ?? null,
-        page_path: pathname || null,
-        user_agent:
-          typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      // The server route validates, rate-limits, reads the UA from the request,
+      // and inserts with the service role.
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: trimmed.slice(0, 2000),
+          category: category || null,
+          email: email.trim() || null,
+          wallet_address: address ?? null,
+          page_path: pathname || null,
+        }),
       });
-      if (error) throw error;
+      if (!res.ok) throw new Error(`feedback responded ${res.status}`);
 
       toast.success('Thanks for the feedback!');
       reset();

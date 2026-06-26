@@ -4,10 +4,7 @@ import { useId, useState } from 'react';
 import { ArrowRight, Check, Wallet } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
-import {
-  getSupabaseBrowser,
-  hasSupabaseConfigClient,
-} from '@/lib/supabase/browser';
+import { hasSupabaseConfigClient } from '@/lib/supabase/browser';
 
 const ACCENT = '#60a5fa';
 
@@ -20,8 +17,8 @@ function shortAddr(addr: string) {
 }
 
 /**
- * Waitlist capture form. Writes straight into public.waitlist via the anon
- * browser client — RLS allows anon INSERT but no public SELECT, so this is a
+ * Waitlist capture form. Submits to the server route /api/waitlist, which
+ * validates + rate-limits and writes with the service role. This is a
  * write-only channel; the owner reads rows in the Supabase dashboard.
  *
  * Wallet is optional: connecting lets us allowlist / gate early access by
@@ -70,23 +67,20 @@ export function WaitlistForm() {
 
     setPending(true);
     try {
-      const supabase = getSupabaseBrowser();
-      // upsert + ignoreDuplicates → a re-submit silently no-ops (no error leaks
-      // whether the email is already on the list).
-      const { error: insertError } = await supabase
-        .from('waitlist')
-        .upsert(
-          {
-            email: normalized,
-            wallet_address: address ?? null,
-            source,
-            referrer,
-            user_agent:
-              typeof navigator !== 'undefined' ? navigator.userAgent : null,
-          },
-          { onConflict: 'email', ignoreDuplicates: true }
-        );
-      if (insertError) throw insertError;
+      // The server route validates, rate-limits, reads the UA from the request,
+      // and upserts with the service role. A duplicate email silently no-ops
+      // server-side, so a re-submit still resolves to success here.
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: normalized,
+          wallet_address: address ?? null,
+          source,
+          referrer,
+        }),
+      });
+      if (!res.ok) throw new Error(`waitlist responded ${res.status}`);
       setDone(true);
     } catch (err) {
       console.error('[waitlist] submit failed', err);

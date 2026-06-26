@@ -23,7 +23,8 @@ import {
   validateOrderExpiry,
 } from '@thetanuts-finance/thetanuts-client';
 import type { MarketView } from '@/lib/sdk/markets';
-import { getReadClient } from '@/lib/sdk/clients';
+import { getReadClient, PARTNER_BROKER_ADDRESS } from '@/lib/sdk/clients';
+import { getPartnerBrokerFeeBps, computePartnerFee } from '@/lib/sdk/partnerBroker';
 import { useSignerClient } from '@/lib/sdk/useSignerClient';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
@@ -387,19 +388,55 @@ export function TradePanel({
       // allowance already covers usdcAmount, so users who pre-approved
       // via the explicit "Approve USDC" button don't see a second wallet
       // popup here.
-      console.info('[polynuts] ensureAllowance', { usdcAddr, orderOptionBook, usdcAmount });
-      const approveReceipt = await signerClient.erc20.ensureAllowance(
-        usdcAddr,
-        orderOptionBook,
-        usdcAmount
-      );
-      console.info('[polynuts] approval done', { txHash: approveReceipt?.hash ?? 'already-approved' });
-      console.info('[polynuts] fillOrder start');
-      const receipt = await signerClient.optionBook.fillOrder(
-        trade.market.order,
-        usdcAmount
-      );
-      console.info('[polynuts] fillOrder done', { txHash: receipt?.hash });
+      let receipt: ethers.TransactionReceipt | null;
+      if (PARTNER_BROKER_ADDRESS && signer) {
+        // Partner-broker path (opt-in via NEXT_PUBLIC_PARTNER_BROKER_ADDRESS):
+        // route the fill THROUGH the broker so it skims its fee. Approve the
+        // BROKER (not OptionBook) for premium + fee, then send the SAME encoded
+        // fillOrder calldata to the broker address — its fillOrder selector
+        // matches OptionBook's and it forwards the position to the taker.
+        // referrer is ZeroAddress here: the broker fee replaces the referrer
+        // split, so we don't double-charge.
+        const price = BigInt(trade.market.order.order.price);
+        const feeBps = await getPartnerBrokerFeeBps(signer.provider!);
+        const fee = computePartnerFee(usdcAmount, price, feeBps);
+        console.info('[polynuts] broker fill', {
+          broker: PARTNER_BROKER_ADDRESS,
+          feeBps: feeBps.toString(),
+          fee: fee.toString(),
+        });
+        await signerClient.erc20.ensureAllowance(
+          usdcAddr,
+          PARTNER_BROKER_ADDRESS,
+          usdcAmount + fee
+        );
+        const { data } = signerClient.optionBook.encodeFillOrder(
+          trade.market.order,
+          usdcAmount,
+          ethers.ZeroAddress
+        );
+        const gas = await signer.estimateGas({ to: PARTNER_BROKER_ADDRESS, data });
+        const tx = await signer.sendTransaction({
+          to: PARTNER_BROKER_ADDRESS,
+          data,
+          gasLimit: (gas * 120n) / 100n,
+        });
+        receipt = await tx.wait();
+        console.info('[polynuts] broker fill done', { txHash: receipt?.hash });
+      } else {
+        // Default path: approve OptionBook and fill directly — taker pays
+        // premium only, no added fee.
+        console.info('[polynuts] ensureAllowance', { usdcAddr, orderOptionBook, usdcAmount });
+        const approveReceipt = await signerClient.erc20.ensureAllowance(
+          usdcAddr,
+          orderOptionBook,
+          usdcAmount
+        );
+        console.info('[polynuts] approval done', { txHash: approveReceipt?.hash ?? 'already-approved' });
+        console.info('[polynuts] fillOrder start');
+        receipt = await signerClient.optionBook.fillOrder(trade.market.order, usdcAmount);
+        console.info('[polynuts] fillOrder done', { txHash: receipt?.hash });
+      }
 
       // Write this trade to Supabase immediately so it appears in the
       // activity/leaderboard without waiting for an indexer sync.
