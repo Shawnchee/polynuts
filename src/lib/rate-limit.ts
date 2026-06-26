@@ -26,11 +26,18 @@ export interface RateLimitResult {
   retryAfterMs: number;
 }
 
+// Hard ceiling on tracked keys. Under a flood of DISTINCT keys within one
+// window nothing expires, so pruning alone frees nothing and the Map would grow
+// without bound (with every insert then paying an O(n) prune). We must be able
+// to evict live windows too.
+const MAX_KEYS = 10_000;
+
 /**
  * Fixed-window counter. Returns whether this hit is allowed and, if not, how
- * long until the window resets. Expired windows are reset lazily on access; a
- * size cap prunes the oldest keys so the Map can't grow unbounded under a flood
- * of distinct IPs.
+ * long until the window resets. Expired windows are reset lazily on access;
+ * when the Map reaches MAX_KEYS we drop expired entries and, if that frees
+ * nothing (a distinct-key flood), hard-evict the oldest-inserted keys so the
+ * Map can't grow unbounded.
  */
 export function rateLimit(
   key: string,
@@ -41,7 +48,13 @@ export function rateLimit(
   const existing = store.get(key);
 
   if (!existing || now >= existing.resetAt) {
-    if (store.size > 10_000) pruneExpired(now);
+    if (store.size >= MAX_KEYS) {
+      pruneExpired(now);
+      // Still full → live, distinct windows. Evict the oldest ~10% (insertion
+      // order). Evicting a live window just resets that key's counter, which is
+      // acceptable degradation under an active flood.
+      if (store.size >= MAX_KEYS) evictOldest(Math.ceil(MAX_KEYS / 10));
+    }
     store.set(key, { count: 1, resetAt: now + windowMs });
     return { allowed: true, remaining: limit - 1, retryAfterMs: 0 };
   }
@@ -60,16 +73,29 @@ function pruneExpired(now: number): void {
   }
 }
 
+function evictOldest(n: number): void {
+  let removed = 0;
+  for (const k of store.keys()) {
+    if (removed >= n) break;
+    store.delete(k);
+    removed += 1;
+  }
+}
+
 /**
- * Best-effort client IP. On Vercel the real client IP is the first entry of
- * `x-forwarded-for`. `NextRequest.ip` was removed in Next 16, so we read headers
- * directly. Falls back to a shared bucket when no IP header is present (local
- * dev, tests) — fine, since those aren't the abuse target.
+ * Best-effort client IP. Prefer `x-real-ip`: on Vercel the platform sets it to
+ * the true connecting IP and overwrites any client-supplied value, so it can't
+ * be spoofed to rotate past the per-IP limit — unlike the leftmost
+ * `x-forwarded-for` token, which a client can prepend. Falls back to the first
+ * `x-forwarded-for` entry off-Vercel, then a shared bucket (local dev, tests).
+ * `NextRequest.ip` was removed in Next 16, so we read headers directly.
  */
 export function clientIp(req: NextRequest): string {
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp) return realIp.trim();
   const xff = req.headers.get('x-forwarded-for');
   if (xff) return xff.split(',')[0]!.trim();
-  return req.headers.get('x-real-ip') ?? 'local';
+  return 'local';
 }
 
 /**
@@ -95,4 +121,9 @@ export function enforceRateLimit(
 /** Test-only: clear all limiter state for deterministic assertions. */
 export function resetRateLimit(): void {
   store.clear();
+}
+
+/** Test-only: number of keys currently tracked (for the size-bound test). */
+export function rateLimitSize(): number {
+  return store.size;
 }

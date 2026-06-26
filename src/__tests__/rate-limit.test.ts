@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { rateLimit, resetRateLimit, clientIp } from '@/lib/rate-limit';
+import { rateLimit, resetRateLimit, clientIp, rateLimitSize } from '@/lib/rate-limit';
 import { NextRequest } from 'next/server';
 
 describe('rateLimit', () => {
@@ -36,6 +36,14 @@ describe('rateLimit', () => {
     // Different key has its own budget.
     expect(rateLimit('b', 1, 1000, 0).allowed).toBe(true);
   });
+
+  it('caps the tracked-key count under a flood of distinct keys in one window', () => {
+    const t = 1_000_000;
+    // 12k distinct keys in the SAME window (nothing expires) — without a hard
+    // eviction the Map would hold all 12k.
+    for (let i = 0; i < 12_000; i++) rateLimit(`flood-${i}`, 5, 60_000, t);
+    expect(rateLimitSize()).toBeLessThanOrEqual(10_000);
+  });
 });
 
 describe('clientIp', () => {
@@ -52,5 +60,12 @@ describe('clientIp', () => {
     });
     expect(clientIp(withReal)).toBe('198.51.100.2');
     expect(clientIp(new NextRequest('http://localhost/'))).toBe('local');
+  });
+
+  it('prefers x-real-ip over x-forwarded-for (anti-spoof on Vercel)', () => {
+    const req = new NextRequest('http://localhost/', {
+      headers: { 'x-real-ip': '198.51.100.5', 'x-forwarded-for': '1.2.3.4, 5.6.7.8' },
+    });
+    expect(clientIp(req)).toBe('198.51.100.5');
   });
 });
