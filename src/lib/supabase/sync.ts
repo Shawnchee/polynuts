@@ -7,6 +7,7 @@ import {
 } from '@thetanuts-finance/thetanuts-client';
 import { ethers } from 'ethers';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { tradeKey, prefixTx, normTx } from '@/lib/txKey';
 
 const USDC_DECIMALS = 6;
 const PRICE_DECIMALS = 8;
@@ -44,7 +45,7 @@ export async function verifyFillOnChain(
   txHash: string,
   takerAddress: string,
   optionId: string,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true; premiumUsdc: number } | { ok: false; reason: string }> {
   const receipt = await client.provider.getTransactionReceipt(txHash);
   if (!receipt) return { ok: false, reason: 'transaction not found on chain' };
 
@@ -61,7 +62,8 @@ export async function verifyFillOnChain(
       const parsed = OPTION_BOOK_IFACE.parseLog({ topics: [...log.topics], data: log.data });
       if (parsed?.name !== 'OrderFilled') continue;
 
-      // args: (nonce, buyer, seller, optionAddress, ...)
+      // OrderFilled args: (nonce, buyer, seller, optionAddress, premiumAmount,
+      // feeCollected, referrer, referralFeePaid, sellerWasMaker)
       const buyer = (parsed.args[1] as string).toLowerCase();
       const optionAddress = (parsed.args[3] as string).toLowerCase();
 
@@ -69,7 +71,13 @@ export async function verifyFillOnChain(
       if (buyer !== taker) {
         return { ok: false, reason: 'buyer in OrderFilled event does not match taker_address' };
       }
-      return { ok: true };
+      // Authoritative premium (cost basis) straight from the verified event —
+      // the taker pays the premium in 6-dec USDC. Returned so the write path can
+      // store the REAL notional instead of trusting the client-supplied amount,
+      // which is otherwise unauthenticated and could be inflated to fake
+      // leaderboard volume or portfolio ROI.
+      const premiumUsdc = bigintToNumber(parsed.args[4] as bigint, USDC_DECIMALS);
+      return { ok: true, premiumUsdc };
     } catch { /* skip logs from other contracts */ }
   }
 
@@ -122,43 +130,33 @@ export function buildMarketLabel(
   return `${underlying} ${strikes.map(fmt).join(' / ')}`;
 }
 
-/**
- * Canonical join key between an indexer TradeHistory row and a DB trade row.
- * The two sources format the same values differently: the indexer returns tx
- * hashes WITHOUT the `0x` prefix and addresses checksummed, while our DB stores
- * the `0x`-prefixed hash and a lowercased option_id. A raw string compare
- * therefore NEVER matches, so settlements were never written and every settled
- * trade stayed stuck on "FILLED" with no realized PnL. Strip the prefix +
- * lowercase both parts so the key matches. (Mirrors `normTx` in explorer.ts,
- * which is a `'use client'` module we can't import into this server file.)
- */
-export function tradeKey(txHash: string, optionId: string): string {
-  return `${(txHash ?? '').toLowerCase().replace(/^0x/, '')}:${(optionId ?? '').toLowerCase()}`;
-}
+// `tradeKey` and `prefixTx` now live in src/lib/txKey.ts — a shared module with
+// neither `'use client'` nor `server-only`, so this server sync and the browser
+// `explorer.ts` canonicalise identifiers through the SAME code instead of two
+// hand-mirrored copies that could drift (the drift that once silently dropped
+// every settlement). See that file for the indexer-vs-DB format mismatch.
 
-/**
- * Canonicalise an indexer tx hash for storage: the Thetanuts indexer returns
- * hashes WITHOUT the `0x` prefix, but our DB (and Basescan links via txUrl)
- * expect the `0x`-prefixed form, matching how `trades.tx_hash` is stored from
- * `receipt.hash`. Returns null for a missing hash so the column stays nullable.
- */
-function prefixTx(hash: string | null | undefined): string | null {
-  if (!hash) return null;
-  return '0x' + hash.toLowerCase().replace(/^0x/, '');
-}
-
-function findBuyerPosition(
+export function findBuyerPosition(
   h: TradeHistory,
   positions: Position[],
 ): Position | undefined {
   const optionAddr = h.option.address.toLowerCase();
   const buyer = h.buyer.toLowerCase();
-  return positions.find(
+  const candidates = positions.filter(
     (p) =>
       p.optionAddress.toLowerCase() === optionAddr &&
       p.buyer.toLowerCase() === buyer &&
       p.side === 'buyer',
   );
+  if (candidates.length <= 1) return candidates[0];
+  // The wallet filled this same option more than once, so there are multiple
+  // buyer positions. Disambiguate by the entry tx (h.txHash is the fill tx —
+  // the same hash this history row was matched to its DB trade by) so each
+  // settlement's PnL attaches to ITS OWN position. Without this they all
+  // collapse onto the first candidate, double-counting one position's pnlUsd
+  // into the leaderboard and dropping the other.
+  const byTx = candidates.find((p) => normTx(p.entryTxHash) === normTx(h.txHash));
+  return byTx ?? candidates[0];
 }
 
 function indexerCostUsd(p: Position | undefined): number | null {
@@ -199,15 +197,24 @@ export interface FillPayload {
 export async function writeFillToDb(
   sb: SupabaseClient,
   data: FillPayload,
+  opts: { ignoreDuplicates?: boolean } = {},
 ): Promise<void> {
   const { error: traderErr } = await sb
     .from('traders')
     .upsert({ address: data.taker_address }, { onConflict: 'address' });
   if (traderErr) throw traderErr;
 
+  // ignoreDuplicates=true (the cron recovery path) inserts ONLY when the
+  // (tx_hash, option_id) row is absent, so a rich UI-written row is never
+  // overwritten by the recovery placeholder (notional 0 / 'recovered' / now()),
+  // which would corrupt the recent-trades feed, admin volume and last_trade_at.
+  // The UI POST path leaves it false so it can still upgrade a prior placeholder.
   const { error } = await sb
     .from('trades')
-    .upsert(data, { onConflict: 'tx_hash,option_id' });
+    .upsert(data, {
+      onConflict: 'tx_hash,option_id',
+      ignoreDuplicates: opts.ignoreDuplicates ?? false,
+    });
   if (error) throw error;
 }
 

@@ -58,7 +58,9 @@ async function runSync(sb: SupabaseClient, client: ThetanutsClient) {
       created_at: new Date().toISOString(),
     };
     try {
-      await writeFillToDb(sb, payload);
+      // Recovery is insert-if-absent: never clobber a richer UI-written row
+      // with this placeholder (notional 0 / 'recovered' / now()).
+      await writeFillToDb(sb, payload, { ignoreDuplicates: true });
     } catch (e) {
       errors.push({
         context: `writeFillToDb:${fill.transactionHash}`,

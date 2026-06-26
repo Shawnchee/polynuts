@@ -18,6 +18,15 @@ export const dynamic = 'force-dynamic';
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
+// Numeric payload fields must be real, non-negative numbers. A bare
+// `typeof x === 'number'` admits NaN/Infinity (which bounce off NOT NULL
+// columns as a 500) and negatives (which would persist and skew volume / PnL /
+// ROI). Note the economic fields are re-derived from the on-chain premium
+// below regardless — this just rejects obviously-bad input early.
+function isFiniteNonNeg(x: unknown): x is number {
+  return typeof x === 'number' && Number.isFinite(x) && x >= 0;
+}
+
 // Both handlers fan out to a paid RPC / indexer, so cap per-IP request rate.
 // GET (read + settlement sync) is polled by the portfolio page; POST (write +
 // on-chain verification, the costlier path) fires once per placed bet.
@@ -107,9 +116,9 @@ export async function POST(req: NextRequest) {
     typeof data.market_label !== 'string' ||
     typeof data.side !== 'string' ||
     !['PUMP', 'DUMP', 'RANGE'].includes(data.side) ||
-    typeof data.contracts !== 'number' ||
-    typeof data.notional_usdc !== 'number' ||
-    typeof data.entry_price !== 'number'
+    !isFiniteNonNeg(data.contracts) ||
+    !isFiniteNonNeg(data.notional_usdc) ||
+    !isFiniteNonNeg(data.entry_price)
   ) {
     return NextResponse.json({ error: 'invalid payload' }, { status: 400 });
   }
@@ -128,9 +137,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: verification.reason }, { status: 403 });
   }
 
-  // Always stamp the server time — never trust the client-supplied created_at.
+  // Build the row from an explicit allowlist — never spread the raw body (that
+  // would let a client set arbitrary `trades` columns, e.g. force a row id).
+  // The economic fields come from the VERIFIED on-chain premium, not the
+  // client's claim: `notional_usdc` is the real USDC premium from the
+  // OrderFilled event and `entry_price` is re-derived from it, so a real fill
+  // can't be re-POSTed with an inflated amount to fake leaderboard volume or
+  // portfolio ROI. `created_at` is server-stamped (never trust the client's).
+  const onChainPremium = verification.premiumUsdc;
   const payload: FillPayload = {
-    ...(data as Omit<FillPayload, 'created_at'>),
+    tx_hash: data.tx_hash!,
+    option_id: data.option_id!,
+    taker_address: data.taker_address!,
+    market_label: data.market_label!,
+    side: data.side!,
+    contracts: data.contracts!,
+    notional_usdc: onChainPremium,
+    entry_price:
+      data.contracts! > 0 ? onChainPremium / data.contracts! : data.entry_price!,
     created_at: new Date().toISOString(),
   };
 

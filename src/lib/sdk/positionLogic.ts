@@ -1,6 +1,7 @@
 import type { Position, TradeHistory } from '@thetanuts-finance/thetanuts-client';
 import { getReadClient } from './clients';
 import { getDirectionFromImpl } from './markets';
+import { normTx } from '@/lib/txKey';
 
 const PRICE_DECIMALS = 8;
 const USD_FIELD_DECIMALS = 8; // Position.pnlUsd, pnlEntries[].costUsd / valueUsd are encoded as 8-dec strings
@@ -273,13 +274,19 @@ export function findSettledPositionForHistory(
   // Settle/exercise rows: the buyer's settled position lives in `positions`
   // with matching optionAddress. The Position side may be either buyer or
   // seller; for realized PnL on a buyer-side settle we want the buyer one.
-  return positions.find(
+  const candidates = positions.filter(
     (p) =>
       p.optionAddress.toLowerCase() === optionAddr &&
       p.buyer.toLowerCase() === buyer &&
       p.side === 'buyer' &&
       !!p.settlement,
   );
+  if (candidates.length <= 1) return candidates[0];
+  // Multiple settled buyer positions on the same option (the wallet filled it
+  // more than once): match by the entry tx so realized PnL doesn't all collapse
+  // onto the first. Mirrors findBuyerPosition in supabase/sync.ts.
+  const byTx = candidates.find((p) => normTx(p.entryTxHash) === normTx(h.txHash));
+  return byTx ?? candidates[0];
 }
 
 /**

@@ -10,7 +10,7 @@ vi.mock('@/lib/supabase/sync', () => ({
   getSyncClient: vi.fn(() => ({})),
   syncSettlementsOnly: vi.fn(async () => ({ settlementsUpserted: 1 })),
   writeFillToDb: vi.fn(async () => undefined),
-  verifyFillOnChain: vi.fn(async () => ({ ok: true })),
+  verifyFillOnChain: vi.fn(async () => ({ ok: true, premiumUsdc: 5 })),
   readUserTrades: vi.fn(async () => [
     {
       id: 1,
@@ -191,6 +191,31 @@ describe('POST /api/me/trades', () => {
     vi.mocked(verifyFillOnChain).mockRejectedValueOnce(new Error('RPC timeout'));
     const res = await POST(makePost(validPayload) as never);
     expect(res.status).toBe(403);
+  });
+
+  it('stores the on-chain premium as notional, ignoring a client-inflated amount', async () => {
+    vi.mocked(verifyFillOnChain).mockResolvedValueOnce({ ok: true, premiumUsdc: 5 });
+    const res = await POST(
+      makePost({ ...validPayload, notional_usdc: 999_999, entry_price: 12_345, contracts: 10 }) as never,
+    );
+    expect(res.status).toBe(200);
+    const written = vi.mocked(writeFillToDb).mock.calls.at(-1)![1] as {
+      notional_usdc: number;
+      entry_price: number;
+    };
+    // Authoritative on-chain premium ($5), NOT the client's inflated $999,999.
+    expect(written.notional_usdc).toBe(5);
+    expect(written.entry_price).toBeCloseTo(0.5, 6); // 5 / 10 contracts
+  });
+
+  it('returns 400 for a negative numeric field', async () => {
+    const res = await POST(makePost({ ...validPayload, notional_usdc: -1 }) as never);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for a non-numeric value in a numeric field', async () => {
+    const res = await POST(makePost({ ...validPayload, contracts: 'lots' }) as never);
+    expect(res.status).toBe(400);
   });
 
   it('returns 429 once the per-IP POST limit is exceeded', async () => {
