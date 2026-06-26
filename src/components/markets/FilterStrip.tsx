@@ -17,7 +17,7 @@ const tabs: { id: FilterTab; label: string }[] = [
 
 const sorts: { id: SortKey; label: string }[] = [
   { id: 'soon', label: 'Ending Soon' },
-  { id: 'volume', label: 'Most Volume' },
+  { id: 'volume', label: 'Most Liquidity' },
   { id: 'newest', label: 'Newest' },
   { id: 'payout', label: 'Highest Payout' },
 ];

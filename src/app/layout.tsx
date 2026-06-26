@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { Inter, JetBrains_Mono, Bricolage_Grotesque } from 'next/font/google';
 import { Providers } from './providers';
+import { NavProgress } from '@/components/nav/NavProgress';
 import { Analytics } from '@vercel/analytics/next';
 import { themeBootScript } from '@/lib/theme';
 import './globals.css';
@@ -57,6 +59,7 @@ export const metadata: Metadata = {
   ],
   icons: {
     icon: '/icon.svg',
+    apple: '/apple-icon.png',
   },
   openGraph: {
     title: 'Polynuts — Bet on crypto, on-chain',
@@ -92,6 +95,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
       <body>
+        {/* Global route-change progress bar — wrapped in Suspense because it
+            reads useSearchParams (avoids forcing the whole tree to client CSR). */}
+        <Suspense fallback={null}>
+          <NavProgress />
+        </Suspense>
         <Providers>{children}</Providers>
         <Analytics />
       </body>

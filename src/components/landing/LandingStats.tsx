@@ -48,8 +48,8 @@ function Cell({
   // whitespace-nowrap keeps every label on one line so the numbers stay on a
   // shared baseline (the longest, "Protocol volume", was wrapping).
   return (
-    <div className="flex flex-col justify-center gap-1.5 bg-[#131720] px-4 py-9 text-center">
-      <div className="font-mono text-3xl font-bold tabular-nums text-white sm:text-4xl">
+    <div className="flex flex-col justify-center gap-2 bg-[#131720] px-4 py-8 text-center">
+      <div className="font-mono text-3xl font-bold leading-none tabular-nums text-white sm:text-4xl">
         {ready ? children : <Skeleton />}
       </div>
       <div className="whitespace-nowrap font-mono text-[11px] uppercase tracking-[0.12em] text-white/35">
@@ -78,16 +78,21 @@ export function LandingStats() {
 
   return (
     <section className="relative border-y border-white/[0.06] bg-white/[0.015]">
-      <div className="mx-auto max-w-6xl">
+      {/* Symmetric py here is what balances the band: the kicker is a centered
+          caption (not a flush top-border header), and the grid is a self-
+          contained card — so the whole group sits with equal air top + bottom
+          instead of being top-heavy from a header with nothing under it. */}
+      <div className="mx-auto max-w-6xl px-6 py-12">
         {/* Honest framing: these are the underlying Thetanuts V4 OptionBook
             numbers — the liquidity Polynuts is a frontend for — not Polynuts'
             own user traction. Labelled accordingly so nothing overclaims. */}
-        <p className="border-b border-white/[0.06] px-6 py-4 text-center font-mono text-[11px] uppercase tracking-[0.16em] text-white/35">
+        <p className="mb-8 text-center font-mono text-[11px] uppercase tracking-[0.16em] text-white/35">
           Powered by Thetanuts V4 — the order book you&apos;re trading on
         </p>
-        {/* gap-px over the divider colour draws hairlines between every cell,
-            so 2-col (mobile) / 3-col (tablet) / 6-col (desktop) all stay tidy. */}
-        <div className="grid grid-cols-2 gap-px bg-white/[0.06] sm:grid-cols-3 lg:grid-cols-6">
+        {/* gap-px over the divider colour draws hairlines between every cell;
+            the outer border + rounded-xl contain it as one card so 2-col
+            (mobile) / 3-col (tablet) / 6-col (desktop) all stay tidy. */}
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-3 lg:grid-cols-6">
           <Cell label="Protocol volume" ready={indexerReady}>
             <CountUp to={vol.to} prefix={vol.prefix} suffix={vol.suffix} decimals={vol.decimals} duration={2} />
           </Cell>

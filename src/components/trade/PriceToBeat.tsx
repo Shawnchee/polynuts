@@ -1,6 +1,5 @@
 'use client';
 
-import { Clock } from 'lucide-react';
 import type { MarketView } from '@/lib/sdk/markets';
 import { Countdown } from '@/components/ui/Countdown';
 import { cn } from '@/lib/utils';
@@ -151,7 +150,6 @@ export function PriceToBeat({
           </span>
         </div>
         <div className="flex items-center gap-1 text-text-muted">
-          <Clock className="h-3.5 w-3.5" aria-hidden />
           <Countdown expirySec={market.expiry} className="text-sm" />
         </div>
       </div>
