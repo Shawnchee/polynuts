@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/api/', '/not-available'],
+      disallow: ['/api/', '/admin', '/not-available'],
     },
     host: 'https://polynuts.xyz',
     sitemap: 'https://polynuts.xyz/sitemap.xml',
