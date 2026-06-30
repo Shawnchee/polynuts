@@ -62,6 +62,23 @@ interface PreviewState {
   capped: boolean;
 }
 
+// Partner-broker fee on a bet, in 6-dec USDC (0n when no broker / not yet
+// loaded). Pure so the React Compiler can memoize it with the render; mirrors
+// the inputs confirmAndFillBet uses (typed amount + order price + feeBps) so the
+// displayed figure equals what the wallet is asked to approve.
+function computeBrokerFee(
+  feeBps: bigint | null,
+  amount: number,
+  market: MarketView | null,
+): bigint {
+  if (feeBps == null || feeBps === 0n || amount <= 0 || !market) return 0n;
+  try {
+    return computePartnerFee(toBigInt(String(amount), 6), BigInt(market.order.order.price), feeBps);
+  } catch {
+    return 0n;
+  }
+}
+
 export function TradePanel({
   market,
   isLoading = false,
@@ -106,6 +123,10 @@ export function TradePanel({
   const readClient = getReadClient();
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // Partner-broker fee rate (bps), read once on-chain when a broker is
+  // configured. Immutable per broker (getPartnerBrokerFeeBps caches it), so this
+  // is at most one RPC call per session and the fill path reuses the same cache.
+  const [feeBps, setFeeBps] = useState<bigint | null>(null);
 
   // SDK-driven max payout for the binary framing (multiplier + implied odds)
   const { data: binary } = useMarketBinaryFraming(market);
@@ -143,6 +164,32 @@ export function TradePanel({
     }, 300);
     return () => clearTimeout(id);
   }, [market, amount, readClient]);
+
+  // Read the broker fee rate once so "Max loss" reflects premium + fee the taker
+  // actually pays. No broker configured → fee stays 0 and the UI is unchanged
+  // (default OptionBook path, premium only). Failure leaves it null; the fill
+  // path re-reads feeBps before charging, so a missed display read is harmless.
+  useEffect(() => {
+    if (!PARTNER_BROKER_ADDRESS) return;
+    let cancelled = false;
+    getPartnerBrokerFeeBps(readClient.provider)
+      .then((b) => {
+        if (!cancelled) setFeeBps(b);
+      })
+      .catch(() => {
+        /* leave null — see note above */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readClient]);
+
+  // Broker fee on the current bet, in 6-dec USDC (0 when no broker). Mirrors the
+  // exact inputs the fill path uses (typed amount + order price + feeBps) so the
+  // figure shown here equals what the wallet is asked to approve. Computed via a
+  // pure module helper so the React Compiler memoizes it with the render.
+  const feeUsdc = computeBrokerFee(feeBps, amount, market);
+  const feeUsd = Number(feeUsdc) / 1e6;
 
   // Flag the global store while a trade is mid-flight (confirm modal open,
   // approving, or fill submitting) so order-book polling pauses and the
@@ -356,6 +403,7 @@ export function TradePanel({
       totalCollateral: preview.totalCollateral,
       maxPayoutAtFill: payoutAtFill ?? null,
       optionBookSpender: spender,
+      feeUsdc,
     });
   }
 
@@ -772,9 +820,15 @@ export function TradePanel({
                 : '—'
             }
           />
+          {feeUsd >= 0.005 && feeBps != null && (
+            <SummaryRow
+              label={`Broker fee (${(Number(feeBps) / 100).toFixed(2)}%)`}
+              value={`$${feeUsd.toFixed(2)} USDC`}
+            />
+          )}
           <SummaryRow
             label="Max loss"
-            value={amount > 0 ? `$${amount.toFixed(2)} USDC` : '—'}
+            value={amount > 0 ? `$${(amount + feeUsd).toFixed(2)} USDC` : '—'}
           />
           <SummaryRow label="Structure" value={market.structureName} mono={false} />
           <SummaryRow

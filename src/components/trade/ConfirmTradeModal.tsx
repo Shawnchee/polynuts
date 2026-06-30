@@ -38,6 +38,8 @@ export interface PendingTrade {
   totalCollateral: bigint;
   /** Structural max payout in 6-dec USDC — from useFillPayout */
   maxPayoutAtFill: bigint | null;
+  /** Partner-broker fee in 6-dec USDC the taker pays on top of premium (0n when no broker). */
+  feeUsdc: bigint;
   /**
    * OptionBook spender resolved at staging time. We snapshot this rather
    * than re-derive it inside confirmAndFillBet so the approval flow
@@ -60,7 +62,7 @@ export function ConfirmTradeModal({
   onConfirm,
   onCancel,
 }: ConfirmTradeModalProps) {
-  const { market, amount, numContracts, totalCollateral, maxPayoutAtFill } =
+  const { market, amount, numContracts, totalCollateral, maxPayoutAtFill, feeUsdc } =
     pending;
   const client = getReadClient();
 
@@ -229,13 +231,18 @@ export function ConfirmTradeModal({
       ? Number(client.utils.fromUsdcDecimals(maxPayoutAtFill))
       : null;
 
-  // totalCollateral is the SDK-computed USDC cost (6-dec) from the
+  // totalCollateral is the SDK-computed USDC premium (6-dec) from the
   // preview — already accounts for maker-cap clamping. Falls back to the
   // raw input only if the preview is mid-recompute.
-  const costUsd =
+  const premiumUsd =
     totalCollateral > 0n
       ? Number(client.utils.fromUsdcDecimals(totalCollateral))
       : amount;
+  // The taker also pays the partner-broker fee on top of premium, so the true
+  // out-of-pocket cost — and the break-even line the payout tone compares to —
+  // is premium + fee.
+  const feeUsd = feeUsdc > 0n ? Number(client.utils.fromUsdcDecimals(feeUsdc)) : 0;
+  const costUsd = premiumUsd + feeUsd;
 
   function handleConfirm() {
     let warning: string | null = null;
@@ -297,9 +304,12 @@ export function ConfirmTradeModal({
           <Row
             label="Size"
             value={
-              Number.isFinite(costUsd) ? `$${costUsd.toFixed(2)} USDC` : '—'
+              Number.isFinite(premiumUsd) ? `$${premiumUsd.toFixed(2)} USDC` : '—'
             }
           />
+          {feeUsd >= 0.005 && (
+            <Row label="Broker fee" value={`$${feeUsd.toFixed(2)} USDC`} />
+          )}
           <Row
             label="Contracts"
             value={Number(
