@@ -118,7 +118,14 @@ export function TradePanel({
     market?.order.rawApiData?.optionBookAddress ??
     signerClient?.chainConfig.contracts.optionBook ??
     null;
-  const { data: allowance } = useUsdcAllowance(orderOptionBook);
+  // When a partner broker is configured the fill is pulled by the BROKER, not
+  // the OptionBook — so USDC must be approved to the broker. The allowance
+  // indicator, the approval button, and the bet gate all key off this spender
+  // so they agree with the actual fill. If they don't (e.g. approving the
+  // OptionBook on the broker path), the user sees "approved" but the fill hits
+  // "ERC20: transfer amount exceeds allowance". No broker → OptionBook, as before.
+  const approvalSpender = PARTNER_BROKER_ADDRESS ?? orderOptionBook;
+  const { data: allowance } = useUsdcAllowance(approvalSpender);
 
   const readClient = getReadClient();
   const [preview, setPreview] = useState<PreviewState | null>(null);
@@ -245,7 +252,7 @@ export function TradePanel({
   }, [allowance]);
 
   async function handleApprove() {
-    if (!ready || !signerClient || !signer || !orderOptionBook) {
+    if (!ready || !signerClient || !signer || !approvalSpender) {
       if (notReadyReason === 'wrong-chain') {
         toast.error('Switch your wallet to Base mainnet first');
       } else {
@@ -257,7 +264,7 @@ export function TradePanel({
     const t = toast.loading('Sign the approval in your wallet…');
     console.info('[polynuts] approve start', {
       usdc: signerClient.chainConfig.tokens.USDC.address,
-      spender: orderOptionBook,
+      spender: approvalSpender,
       amount: 'MAX_UINT256',
     });
     try {
@@ -278,7 +285,7 @@ export function TradePanel({
         'function approve(address spender, uint256 value)',
       ]);
       const data = erc20.encodeFunctionData('approve', [
-        orderOptionBook,
+        approvalSpender,
         MAX_UINT256,
       ]);
       const tx = await signer.sendTransaction({
@@ -864,7 +871,7 @@ export function TradePanel({
           is on Base, so the user can approve (or re-approve) up front rather
           than only when a bet is already sized. Approval is a one-time
           max-uint256 grant; after that every bet is a single wallet popup. */}
-      {isConnected && ready && orderOptionBook && (
+      {isConnected && ready && approvalSpender && (
         <div className="mt-4 flex items-center justify-between gap-2 rounded-md border border-line bg-bg-subtle px-3 py-2">
           <div className="flex min-w-0 items-center gap-1.5 text-xs">
             <span className="text-text-dim">USDC allowance</span>
