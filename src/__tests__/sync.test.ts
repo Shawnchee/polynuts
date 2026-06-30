@@ -1,10 +1,16 @@
-import { describe, it, expect } from 'vitest';
-import type { Position, TradeHistory } from '@thetanuts-finance/thetanuts-client';
+import { describe, it, expect, afterEach } from 'vitest';
+import { ethers } from 'ethers';
+import {
+  OPTION_BOOK_ABI,
+  type Position,
+  type TradeHistory,
+} from '@thetanuts-finance/thetanuts-client';
 import {
   bigintToNumber,
   usd8ToNumber,
   sideFromOptionType,
   findBuyerPosition,
+  verifyFillOnChain,
 } from '@/lib/supabase/sync';
 
 describe('bigintToNumber', () => {
@@ -119,5 +125,92 @@ describe('findBuyerPosition', () => {
 
   it('returns undefined when nothing matches', () => {
     expect(findBuyerPosition(mkHist('aaa111'), [])).toBeUndefined();
+  });
+
+  // Broker fills: the position row and the history row can disagree on `buyer`
+  // (broker on one side, taker on the other), so buyer-equality finds nothing —
+  // the entry tx hash is the precise join.
+  const BROKER_BUYER = '0xBrokeR00000000000000000000000000000000004';
+  const mkBrokerPos = (entryTxHash: string): Position =>
+    ({ optionAddress: OPT, buyer: BROKER_BUYER, side: 'buyer', entryTxHash }) as unknown as Position;
+
+  it('falls back to entry-tx match when the position buyer differs (broker fill)', () => {
+    const pos = mkBrokerPos('0xaaa111');
+    expect(findBuyerPosition(mkHist('aaa111'), [pos])).toBe(pos);
+  });
+
+  it('does not entry-tx-match a position on a different option', () => {
+    const pos = ({ optionAddress: '0xOtheR0000000000000000000000000000000005', buyer: BROKER_BUYER, side: 'buyer', entryTxHash: '0xaaa111' }) as unknown as Position;
+    expect(findBuyerPosition(mkHist('aaa111'), [pos])).toBeUndefined();
+  });
+
+  it('returns undefined when buyer differs AND the entry tx differs', () => {
+    const pos = mkBrokerPos('0xzzz999');
+    expect(findBuyerPosition(mkHist('aaa111'), [pos])).toBeUndefined();
+  });
+});
+
+describe('verifyFillOnChain — partner broker path', () => {
+  const IFACE = new ethers.Interface(OPTION_BOOK_ABI as ethers.InterfaceAbi);
+  const TAKER = '0x1111111111111111111111111111111111111111';
+  const BROKER = '0xa31e4cb8dcccb131cdc6bc9f2e280c522517de1b';
+  const SELLER = '0x2222222222222222222222222222222222222222';
+  const OPTION = '0x3333333333333333333333333333333333333333';
+  const STRANGER = '0x9999999999999999999999999999999999999999';
+  const TX = '0x' + 'a'.repeat(64);
+
+  // A real, parseable OrderFilled log for the given buyer/option/premium.
+  function fillLog(buyer: string, optionAddress: string, premium: bigint) {
+    const { data, topics } = IFACE.encodeEventLog('OrderFilled', [
+      1n, buyer, SELLER, optionAddress, premium, 0n, ethers.ZeroAddress, 0n, false,
+    ]);
+    return { topics, data };
+  }
+  const mkClient = (receipt: unknown) =>
+    ({ provider: { getTransactionReceipt: async () => receipt } }) as never;
+
+  const ORIG = process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS;
+  afterEach(() => {
+    if (ORIG === undefined) delete process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS;
+    else process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS = ORIG;
+  });
+
+  it('accepts a broker-routed fill (buyer=broker, sender=taker) when broker is configured', async () => {
+    process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS = BROKER;
+    const receipt = { from: TAKER, logs: [fillLog(BROKER, OPTION, 5_000_000n)] };
+    expect(await verifyFillOnChain(mkClient(receipt), TX, TAKER, OPTION)).toEqual({
+      ok: true,
+      premiumUsdc: 5,
+    });
+  });
+
+  it('still accepts a direct fill (buyer=taker)', async () => {
+    process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS = BROKER;
+    const receipt = { from: TAKER, logs: [fillLog(TAKER, OPTION, 3_000_000n)] };
+    expect(await verifyFillOnChain(mkClient(receipt), TX, TAKER, OPTION)).toEqual({
+      ok: true,
+      premiumUsdc: 3,
+    });
+  });
+
+  it('rejects a broker-buyer fill when NO broker is configured (regression guard)', async () => {
+    delete process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS;
+    const receipt = { from: TAKER, logs: [fillLog(BROKER, OPTION, 5_000_000n)] };
+    const res = await verifyFillOnChain(mkClient(receipt), TX, TAKER, OPTION);
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects when the tx sender is not the taker, even with a valid broker buyer', async () => {
+    process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS = BROKER;
+    const receipt = { from: STRANGER, logs: [fillLog(BROKER, OPTION, 5_000_000n)] };
+    const res = await verifyFillOnChain(mkClient(receipt), TX, TAKER, OPTION);
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects a buyer that is neither the taker nor the broker', async () => {
+    process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS = BROKER;
+    const receipt = { from: TAKER, logs: [fillLog(STRANGER, OPTION, 5_000_000n)] };
+    const res = await verifyFillOnChain(mkClient(receipt), TX, TAKER, OPTION);
+    expect(res.ok).toBe(false);
   });
 });

@@ -25,11 +25,23 @@ export function getSyncClient(): ThetanutsClient {
 }
 
 const OPTION_BOOK_IFACE = new ethers.Interface(OPTION_BOOK_ABI as ethers.InterfaceAbi);
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+
+// The deployed PartnerFeeBroker, if configured. On a broker-routed fill the
+// broker contract — not the taker — is the `buyer` in the OptionBook
+// OrderFilled event (it calls fillOrder, then forwards the position to the
+// taker), so the sync layer must recognise it as a legitimate buyer. Read from
+// env per-call rather than module scope so tests can set it before invoking.
+function configuredBrokerAddress(): string | null {
+  const b = process.env.NEXT_PUBLIC_PARTNER_BROKER_ADDRESS?.toLowerCase();
+  return b && b !== ZERO_ADDR ? b : null;
+}
 
 /**
  * Verify that a tx_hash is a real, mined OrderFilled transaction whose buyer
- * matches the claimed taker_address and option. Used by POST /api/me/trades to
- * prevent anyone from writing fake trade records for wallets they don't control.
+ * matches the claimed taker_address (or the configured partner broker) and
+ * option. Used by POST /api/me/trades to prevent anyone from writing fake trade
+ * records for wallets they don't control.
  *
  * Verification reads the tx's OWN receipt logs (book-agnostic and reliable —
  * the OrderFilled event is always present in the fill tx). We deliberately do
@@ -37,6 +49,11 @@ const OPTION_BOOK_IFACE = new ethers.Interface(OPTION_BOOK_ABI as ethers.Interfa
  * contract, so fills routed through a secondary/legacy book (e.g. orders posted
  * on 0x1bDff855…) return no match and every such fill would be rejected — which
  * silently dropped real trades from the leaderboard.
+ *
+ * Broker path: when NEXT_PUBLIC_PARTNER_BROKER_ADDRESS is set, fills route
+ * THROUGH the broker, so `buyer` is the broker. We still require
+ * `receipt.from === taker` (the taker signs the tx to the broker), so accepting
+ * the broker as buyer can't let anyone claim someone else's fill.
  *
  * OrderFilled event args: (nonce, buyer, seller, optionAddress, ...)
  */
@@ -50,8 +67,11 @@ export async function verifyFillOnChain(
   if (!receipt) return { ok: false, reason: 'transaction not found on chain' };
 
   const taker = takerAddress.toLowerCase();
+  const broker = configuredBrokerAddress();
 
-  // The wallet that sent the transaction must be the claimed taker.
+  // The wallet that sent the transaction must be the claimed taker. This is the
+  // real anti-spoofing guard and holds on BOTH paths: the taker signs the fill
+  // directly to OptionBook, or signs it to the broker on the partner path.
   if (receipt.from.toLowerCase() !== taker) {
     return { ok: false, reason: 'tx sender does not match taker_address' };
   }
@@ -68,14 +88,21 @@ export async function verifyFillOnChain(
       const optionAddress = (parsed.args[3] as string).toLowerCase();
 
       if (optionAddress !== optionId.toLowerCase()) continue;
-      if (buyer !== taker) {
-        return { ok: false, reason: 'buyer in OrderFilled event does not match taker_address' };
+      // Direct fill → buyer is the taker. Broker fill → buyer is the broker
+      // contract (gated by receipt.from === taker above, so still un-spoofable).
+      if (buyer !== taker && !(broker && buyer === broker)) {
+        return {
+          ok: false,
+          reason: 'buyer in OrderFilled event does not match taker_address or partner broker',
+        };
       }
       // Authoritative premium (cost basis) straight from the verified event —
-      // the taker pays the premium in 6-dec USDC. Returned so the write path can
-      // store the REAL notional instead of trusting the client-supplied amount,
-      // which is otherwise unauthenticated and could be inflated to fake
-      // leaderboard volume or portfolio ROI.
+      // the premium paid into OptionBook in 6-dec USDC. Returned so the write
+      // path can store the REAL notional instead of trusting the client-supplied
+      // amount, which is otherwise unauthenticated and could be inflated to fake
+      // leaderboard volume or portfolio ROI. On the broker path this excludes
+      // the broker's feeBps skim (a separate ~0.1% the taker pays on top), so
+      // notional == option premium stays consistent across both fill paths.
       const premiumUsdc = bigintToNumber(parsed.args[4] as bigint, USDC_DECIMALS);
       return { ok: true, premiumUsdc };
     } catch { /* skip logs from other contracts */ }
@@ -148,7 +175,20 @@ export function findBuyerPosition(
       p.buyer.toLowerCase() === buyer &&
       p.side === 'buyer',
   );
-  if (candidates.length <= 1) return candidates[0];
+  if (candidates.length === 0) {
+    // Broker fills: the position row and the history row can disagree on `buyer`
+    // (broker on one side, taker on the other), so the equality filter above
+    // misses. The entry (fill) tx hash is the precise join — exactly one buyer
+    // position per fill tx — so fall back to it before giving up. Strictly
+    // additive: this branch only runs when buyer-matching already found nothing.
+    return positions.find(
+      (p) =>
+        p.optionAddress.toLowerCase() === optionAddr &&
+        p.side === 'buyer' &&
+        normTx(p.entryTxHash) === normTx(h.txHash),
+    );
+  }
+  if (candidates.length === 1) return candidates[0];
   // The wallet filled this same option more than once, so there are multiple
   // buyer positions. Disambiguate by the entry tx (h.txHash is the fill tx —
   // the same hash this history row was matched to its DB trade by) so each
@@ -261,11 +301,17 @@ export async function syncSettlementsOnly(
     client.api.getUserPositionsFromIndexer(addr),
   ]);
 
+  // On broker fills the indexer may report `buyer` as the broker, not the taker.
+  // The `byKey.has(...)` check already scopes every match to THIS taker's own DB
+  // trades (written + on-chain-verified by POST), so also accepting the broker
+  // as buyer here is safe and lets broker-routed settlements attach.
+  const broker = configuredBrokerAddress();
   const settlementRows = history
     .filter(
       (h) =>
         h.settlement &&
-        h.buyer.toLowerCase() === addr &&
+        (h.buyer.toLowerCase() === addr ||
+          (broker != null && h.buyer.toLowerCase() === broker)) &&
         byKey.has(tradeKey(h.txHash, h.option.address)),
     )
     .map((h) => {
@@ -336,9 +382,14 @@ export async function syncUserFromIndexer(
     client.api.getUserPositionsFromIndexer(addr),
   ]);
 
-  const fills = history.filter(
-    (h) => h.type === 'fill' && h.buyer.toLowerCase() === addr,
-  );
+  // Accept broker-routed fills too: the indexer queries by `addr` (this taker),
+  // so any row it returns is theirs even when `buyer` is the broker contract.
+  // Without this the cron recovery silently skips every broker fill.
+  const broker = configuredBrokerAddress();
+  const isOurBuyer = (h: TradeHistory) =>
+    h.buyer.toLowerCase() === addr || (broker != null && h.buyer.toLowerCase() === broker);
+
+  const fills = history.filter((h) => h.type === 'fill' && isOurBuyer(h));
 
   const tradeRows = fills.map((h) => {
     const matched = findBuyerPosition(h, positions);
@@ -377,7 +428,7 @@ export async function syncUserFromIndexer(
     .filter(
       (h) =>
         h.settlement &&
-        h.buyer.toLowerCase() === addr &&
+        isOurBuyer(h) &&
         byKey.has(tradeKey(h.txHash, h.option.address)),
     )
     .map((h) => {
