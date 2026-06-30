@@ -5,7 +5,8 @@
 **Goal:** deploy to Vercel and go live.
 
 This is the live punch list for the next agent/person. It supersedes the "Production prep"
-sections of `TODO.md`. Background detail lives in `production_checklist.md` and `brief.md`.
+sections of `TODO.md`. Background detail lives in `brief.md`. (The older `production_checklist.md`
+was folded into this file and removed — it had a stale cron section that contradicted the v1 decision.)
 
 ---
 
@@ -56,6 +57,7 @@ runs and can place a bet. But "runs" ≠ "ready for users." Priority is by real-
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WC connector **silently dropped** (`wagmi.ts:19`); MetaMask/Coinbase/Rainbow still connect. Mobile WC-QR users can't connect | P2 (cheap) |
 | `NEXT_PUBLIC_CHAIN_ID` | Defaults to `8453` (Base) | ✅ default OK |
 | `BLOCKED_COUNTRIES` | Defaults to `US` (server-only; never `NEXT_PUBLIC_`) | ✅ default OK |
+| `NEXT_PUBLIC_PARTNER_BROKER_ADDRESS` | If **unset**, fills go straight to OptionBook and **you earn nothing**. Set to the deployed PartnerFeeBroker (`0xA31E4cB8…dE1B`, Base, 10 bps) to skim 0.10% per fill → claimable via `claimPartnerFees(USDC)`. Build-time like all `NEXT_PUBLIC_*`. | **P0 — your revenue** |
 
 ---
 
@@ -63,6 +65,15 @@ runs and can place a bet. But "runs" ≠ "ready for users." Priority is by real-
 
 - [ ] **Vercel project setup:** import the repo, set **Production Branch = `main`**.
 - [ ] **Push env vars to Vercel** — every value is ready in `.env.local`; this is a copy job. Set them all (don't paste only the ones you remember — the build throws on a zero `NEXT_PUBLIC_REFERRER_ADDRESS`, so referrer must be there too). Highest-impact one is **`NEXT_PUBLIC_RPC_URL`** (keyed Alchemy already in `.env.local`); without it prod falls back to the public Base RPC and rate-limits under any real load.
+- [ ] **`NEXT_PUBLIC_PARTNER_BROKER_ADDRESS`** — set it in Vercel or **the deployed site earns you nothing** (silently routes straight to OptionBook, same class of loss as the old referrer-burn gate). It's `NEXT_PUBLIC_` ⇒ baked at build time, so set it *before* the prod build. Verified live 2026-06-30: a real $1 fill accrued 0.000999 USDC to the broker.
+
+## P0.5 — broker fill must work before you flip the launch toggle
+
+The broker path (taker → broker → OptionBook) has its own approval surface. Fixed in `6ad542e`: USDC is now approved to the **broker** (not the OptionBook) so the fill doesn't revert with `ERC20: transfer amount exceeds allowance`.
+
+- [ ] **Redeploy** so prod includes `6ad542e` (and the fee-display + broker-aware DB-write commits).
+- [ ] **Verify a broker fill end-to-end** (preview-bypass the waitlist — see launch toggle): Approve USDC → it approves the broker → place a bet → it fills with no second popup. Then confirm `accumulatedFees(USDC)` ticked up and `claimPartnerFees(USDC)` pays your wallet.
+- [ ] ⚠️ **Do NOT unset `LAUNCH_MODE` (go fully live) until the above passes on the redeployed build** — otherwise the first real users hit the allowance revert.
 
 ## P1 — leaderboard + persistence
 
@@ -78,7 +89,16 @@ runs and can place a bet. But "runs" ≠ "ready for users." Priority is by real-
 ## Pre-trust gates (run before pointing users at prod)
 
 - [ ] **`node scripts/verify-sdk.mjs`** against the real RPC — pricing hard-gate (9 samples + 4 linearity assertions). Stop if any payout/multiplier is 0 or NaN. Also: `check-orders.mjs`, `check-markets.mjs`, `check-payouts.mjs`.
-- [ ] **$1 mainnet smoke test** from the deployed URL (full 8-point list in `production_checklist.md` §6): connect → $1 PUMP bet → approve <1s → fill on Basescan → `/portfolio` updates ~1s → leaderboard renders → win-card OG image → WC QR on mobile.
+- [ ] **$1 mainnet smoke test** from the deployed URL (fresh browser profile, not localhost). The full 8 points (folded in from the now-removed `production_checklist.md`):
+  1. Connect MetaMask on Base mainnet — wrong-chain toast appears if on the wrong network.
+  2. Place a $1 PUMP bet on any ETH market with ≥1h to expiry.
+  3. USDC **Approve** popup is instant (<1s) — the 80k gas pin works against your prod RPC. On the broker path this now approves the **broker** (verify the spender).
+  4. Fill confirms on Basescan (tx link in the success toast).
+  5. `/portfolio` shows the new position within ~1s (cache invalidation works).
+  6. Leaderboard shows data or a clean empty state (no crash on empty `trades`).
+  7. Win-card OG image renders with the correct amount + direction.
+  8. WalletConnect QR works on mobile (Rainbow / Coinbase Wallet).
+- [ ] **Broker monetization check** (new): after the smoke fill, confirm `accumulatedFees(USDC)` on `0xA31E4cB8…dE1B` ticked up and `claimPartnerFees(USDC)` from `0xe6c3…e7ef` pays out.
 
 ---
 
@@ -95,6 +115,7 @@ Per `production_checklist.md` §8 and `TODO.md`:
 
 - [ ] Delete the stale `prod-readiness` branch on the remote (confirmed still present 2026-06-14; no longer default, everything is in `main`). You are also still on `prod-readiness` locally — switch to `main` before cleanup.
 - [ ] `useMarketData` hook is unused after the Deribit migration (`src/lib/sdk/useOrders.ts:43`) — delete or wire as a fallback. Audit "SHOULD FIX," low priority.
+- [ ] **`option_id` backfill (historical, optional):** trades written before the `args[2]`→`args[3]` fix stored the seller address in `option_id` instead of the option contract. Harmless live (settlements match by `tx_hash` from the indexer), so only backfill once trade count makes it worth re-deriving from on-chain events.
 
 ---
 
