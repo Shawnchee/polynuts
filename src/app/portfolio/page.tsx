@@ -24,6 +24,7 @@ export default function PortfolioPage() {
     data: positions = [],
     isLoading: posLoading,
     isFetching: posFetching,
+    isError: posError,
     refetch: refetchPositions,
   } = usePositions();
   const markOf = usePositionMarks();
@@ -55,6 +56,18 @@ export default function PortfolioPage() {
           loading={posLoading}
           empty={<EmptyPositions />}
           skeleton={<TableSkeleton cols={7} rows={3} />}
+          // A failed indexer/RPC fetch must NOT fall through to the "No positions
+          // yet" empty state — a user with live positions would think they
+          // vanished. Only show the error when we have nothing to display; if a
+          // prior fetch left stale positions cached, keep showing those instead.
+          error={
+            posError && openPositions.length === 0 ? (
+              <PositionsError
+                busy={posFetching}
+                onRetry={() => void refetchPositions()}
+              />
+            ) : null
+          }
           action={
             <RefreshButton busy={posFetching} onClick={() => void refetchPositions()} />
           }
@@ -186,6 +199,7 @@ function Section({
   loading,
   empty,
   skeleton,
+  error,
   action,
   children,
 }: {
@@ -194,6 +208,8 @@ function Section({
   loading: boolean;
   empty: React.ReactNode;
   skeleton: React.ReactNode;
+  /** Rendered instead of `empty` when the underlying fetch failed with no data. */
+  error?: React.ReactNode;
   action?: React.ReactNode;
   children?: React.ReactNode;
 }) {
@@ -208,7 +224,7 @@ function Section({
         </div>
         {action}
       </div>
-      {loading ? skeleton : count === 0 ? empty : children}
+      {loading ? skeleton : error ? error : count === 0 ? empty : children}
     </section>
   );
 }
@@ -247,6 +263,33 @@ function EmptyPositions() {
       >
         Browse markets
       </Link>
+    </div>
+  );
+}
+
+/**
+ * Distinct from EmptyPositions: shown when the positions fetch actually FAILED
+ * (indexer/RPC hiccup) rather than returning zero rows. Reassures the user their
+ * funds are safe on-chain and offers a manual retry — positions also auto-refetch
+ * every 30s, so this typically self-heals without interaction.
+ */
+function PositionsError({ busy, onRetry }: { busy: boolean; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-4 py-14 text-center">
+      <p className="text-md font-medium text-text">Couldn&rsquo;t load your positions</p>
+      <p className="max-w-sm text-sm text-text-muted">
+        A temporary network or indexer hiccup — your positions and funds are safe
+        on-chain. Try again in a moment.
+      </p>
+      <button
+        onClick={onRetry}
+        disabled={busy}
+        aria-busy={busy}
+        className="press-scale inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+      >
+        <RefreshCw aria-hidden className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
+        {busy ? 'Retrying…' : 'Retry'}
+      </button>
     </div>
   );
 }
