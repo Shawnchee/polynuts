@@ -34,10 +34,10 @@ const jetbrains = JetBrains_Mono({
 const SITE_DESCRIPTION =
   'A prediction market for crypto options. Bet PUMP or DUMP on ETH and BTC with USDC. Powered by Thetanuts Finance V4 on Base.';
 
-// Reuse the live share-card renderer for the default unfurl image. `pending`
-// shows the direction-tinted "BETTING" treatment, which reads well as a
-// generic marketing card for a link to the markets page.
-const OG_IMAGE = '/api/win-card?result=pending';
+// Static branded share/unfurl image for the site (1200×630, public/og-image.png).
+// The dynamic /api/win-card renderer is still used for per-trade win cards; this
+// is the generic card shown when someone shares a bare polynuts.xyz link.
+const OG_IMAGE = '/og-image.png';
 
 export const metadata: Metadata = {
   title: {

@@ -99,10 +99,10 @@ export const metadata: Metadata = {
     // against the layout's metadataBase (https://polynuts.xyz).
     images: [
       {
-        url: '/api/win-card?result=pending',
+        url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Polynuts — bet PUMP or DUMP on crypto with USDC',
+        alt: 'Polynuts — the Polymarket of crypto options',
       },
     ],
   },
