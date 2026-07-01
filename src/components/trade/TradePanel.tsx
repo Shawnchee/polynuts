@@ -846,12 +846,15 @@ export function TradePanel({
         </div>
       </details>
 
-      <HowItSettles market={market} />
+      <HowItSettles market={market} feeBps={feeBps} />
 
       {previewError && <p className="mt-2 text-sm text-dump">{previewError}</p>}
 
       <div className="mt-3">
-        <ChartSwitcher market={market} preview={preview} amount={amount} />
+        {/* Pass the fee-inclusive cost so the payoff chart's Max-loss / P&L
+            curve / break-even match the "Max loss" (premium + fee) shown in
+            Trade details above — not the premium-only typed amount. */}
+        <ChartSwitcher market={market} preview={preview} costUsd={amount + feeUsd} />
       </div>
 
       {preview?.capped && (
@@ -993,11 +996,12 @@ export function TradePanel({
 function ChartSwitcher({
   market,
   preview,
-  amount,
+  costUsd,
 }: {
   market: MarketView;
   preview: PreviewState | null;
-  amount: number;
+  /** Fee-inclusive cost basis (premium + broker fee) used for the P/L curve. */
+  costUsd: number;
 }) {
   const [tab, setTab] = useState<ChartTab>('payout');
   return (
@@ -1014,7 +1018,7 @@ function ChartSwitcher({
         <PayoutChart
           market={market}
           numContracts={preview?.numContracts ?? null}
-          betUsd={amount}
+          betUsd={costUsd}
         />
       ) : (
         <TradingViewChart asset={market.asset} height={240} />
