@@ -11,9 +11,16 @@ export function PnlPill({ amount, digits, percent }: PnlPillProps) {
   if (!Number.isFinite(amount)) {
     return <span className="num font-semibold tabular-nums text-text-dim">—</span>;
   }
-  const positive = amount >= 0;
+  // Exactly-zero PnL (e.g. a break-even RANGE settle) is a wash, not a win —
+  // render it neutral with no leading "+", so it doesn't read as green profit.
+  const sign = amount > 0 ? 1 : amount < 0 ? -1 : 0;
   const auto = pickDigits(amount, digits);
-  const tint = positive ? 'text-pump dark:text-pump-dark' : 'text-dump dark:text-dump-dark';
+  const tint =
+    sign > 0
+      ? 'text-pump dark:text-pump-dark'
+      : sign < 0
+      ? 'text-dump dark:text-dump-dark'
+      : 'text-text-dim';
   const dollarStr = amount.toLocaleString('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -23,11 +30,11 @@ export function PnlPill({ amount, digits, percent }: PnlPillProps) {
   const showPct = typeof percent === 'number' && Number.isFinite(percent);
   return (
     <span className={cn('num font-semibold tabular-nums', tint)}>
-      {positive ? '+' : ''}
+      {sign > 0 ? '+' : ''}
       {dollarStr}
       {showPct && (
         <span className="ml-1 text-xs opacity-80">
-          ({percent! >= 0 ? '+' : ''}
+          ({percent! > 0 ? '+' : ''}
           {percent!.toFixed(2)}%)
         </span>
       )}
