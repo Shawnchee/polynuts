@@ -89,6 +89,22 @@ export const metadata: Metadata = {
     title: 'Polynuts — the Polymarket of crypto options',
     description: 'Bet PUMP or DUMP on ETH & BTC, on-chain. Join the waitlist for early access.',
     url: 'https://polynuts.vercel.app/waitlist',
+    siteName: 'Polynuts',
+    // Next replaces the whole openGraph object per route (no deep-merge with the
+    // root layout), so without re-declaring these the layout's og:image + siteName
+    // are DROPPED on this page — and since prod serves /waitlist as the front door
+    // in launch mode, that's the card everyone unfurls. X still renders (it reads
+    // the inherited twitter:image), but og:image platforms (Facebook, LinkedIn,
+    // Discord, WhatsApp) fall back to a blank/text card. The relative URL resolves
+    // against the layout's metadataBase (https://polynuts.xyz).
+    images: [
+      {
+        url: '/api/win-card?result=pending',
+        width: 1200,
+        height: 630,
+        alt: 'Polynuts — bet PUMP or DUMP on crypto with USDC',
+      },
+    ],
   },
   // Pre-launch capture page — keep it out of the index.
   robots: { index: false, follow: false },
