@@ -9,17 +9,23 @@ export const config = {
 };
 
 /**
- * Comma-separated ISO country codes — e.g. "US,IR,KP,SY,CU,RU,BY".
- * Defaults to US-only blocking. Set BLOCKED_COUNTRIES in server env to override.
- * Never use NEXT_PUBLIC_ here — this list runs server/edge only and should
- * not be embedded in the client bundle.
+ * Comma-separated ISO country codes to geo-block — e.g. "IR,KP,SY,CU".
+ * Empty/unset means no country is blocked (open to all regions, including the
+ * US). Set BLOCKED_COUNTRIES in server env to restrict specific regions.
+ *
+ * Read per-request (not a module const) so it's trivially testable and reflects
+ * env without a rebuild — same pattern as isPrelaunch() below. Never use
+ * NEXT_PUBLIC_ here — this list runs server/edge only and should not be
+ * embedded in the client bundle.
  */
-const blocked = new Set(
-  (process.env.BLOCKED_COUNTRIES ?? 'US')
-    .split(',')
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean)
-);
+function blockedCountries(): Set<string> {
+  return new Set(
+    (process.env.BLOCKED_COUNTRIES ?? '')
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean)
+  );
+}
 
 // ─── Pre-launch ("coming soon") gate ────────────────────────────────────────
 // While LAUNCH_MODE is on, every visitor is funneled to /waitlist and the rest
@@ -96,7 +102,7 @@ export function proxy(req: NextRequest) {
   // Geo-block runs FIRST, so blocked countries hit /not-available even on the
   // waitlist host — consistent with the rest of the site.
   const country = (req.headers.get('x-vercel-ip-country') ?? '').toUpperCase();
-  if (country && blocked.has(country)) {
+  if (country && blockedCountries().has(country)) {
     // Redirect (307) to /not-available so the URL bar reflects the block and
     // crawlers / compliance audits see a distinct route, not a 200 with the
     // home page rendered behind a rewrite. /not-available is excluded from

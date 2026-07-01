@@ -27,6 +27,7 @@ describe('proxy launch gate', () => {
   afterEach(() => {
     delete process.env.LAUNCH_MODE;
     delete process.env.LAUNCH_PREVIEW_SECRET;
+    delete process.env.BLOCKED_COUNTRIES;
   });
 
   it('open mode: app is reachable (no rewrite to /waitlist)', () => {
@@ -80,15 +81,22 @@ describe('proxy launch gate', () => {
     expect(res.cookies.get('pn_preview')?.value).toBe('');
   });
 
-  it('geo-block still wins, even in open mode', () => {
-    const res = proxy(req('/markets', { country: 'US' }));
+  it('no country is blocked by default (US passes through)', () => {
+    // Default (BLOCKED_COUNTRIES unset) is open to all regions, including US.
+    expect(isNext(proxy(req('/markets', { country: 'US' })))).toBe(true);
+  });
+
+  it('geo-block still wins over open mode when a country is configured', () => {
+    process.env.BLOCKED_COUNTRIES = 'IR';
+    const res = proxy(req('/markets', { country: 'IR' }));
     expect(res.status).toBe(307);
     expect(res.headers.get('location')).toContain('/not-available');
   });
 
   it('geo-block applies before the launch gate', () => {
     process.env.LAUNCH_MODE = 'waitlist';
-    const res = proxy(req('/', { country: 'US' }));
+    process.env.BLOCKED_COUNTRIES = 'IR';
+    const res = proxy(req('/', { country: 'IR' }));
     expect(res.headers.get('location')).toContain('/not-available');
   });
 });
