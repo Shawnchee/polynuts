@@ -24,6 +24,7 @@ import {
 } from '@thetanuts-finance/thetanuts-client';
 import type { MarketView } from '@/lib/sdk/markets';
 import { getReadClient, PARTNER_BROKER_ADDRESS } from '@/lib/sdk/clients';
+import { polynutsLogger } from '@/lib/sdk/logger';
 import { getPartnerBrokerFeeBps, computePartnerFee } from '@/lib/sdk/partnerBroker';
 import { useSignerClient } from '@/lib/sdk/useSignerClient';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
@@ -259,7 +260,7 @@ export function TradePanel({
     }
     setApproving(true);
     const t = toast.loading('Sign the approval in your wallet…');
-    console.info('[polynuts] approve start', {
+    polynutsLogger.info?.('approve start', {
       usdc: signerClient.chainConfig.tokens.USDC.address,
       spender: approvalSpender,
       amount: 'MAX_UINT256',
@@ -291,7 +292,7 @@ export function TradePanel({
         gasLimit: 80_000n,
       });
       const receipt = await tx.wait();
-      console.info('[polynuts] approve mined', { txHash: receipt?.hash });
+      polynutsLogger.info?.('approve mined', { txHash: receipt?.hash });
       // Bust the allowance cache so the bet button activates immediately.
       await queryClient.invalidateQueries({ queryKey: ['usdc-allowance'] });
       const explorer = signerClient.chainConfig.explorerUrl;
@@ -320,7 +321,7 @@ export function TradePanel({
         // Not an error — the user explicitly clicked Reject in their
         // wallet. Don't shout in the console; show a friendly toast
         // explaining they're free to try again.
-        console.info('[polynuts] approve cancelled by user');
+        polynutsLogger.info?.('approve cancelled by user');
         toast.info(
           'You rejected the approval. Click "Approve USDC" again to retry.',
           { id: t, duration: 6000 }
@@ -423,7 +424,7 @@ export function TradePanel({
 
     setSubmitting(true);
     const t = toast.loading('Placing your bet…');
-    console.info('[polynuts] confirmAndFillBet start', {
+    polynutsLogger.info?.('confirmAndFillBet start', {
       market: trade.market.id,
       amount: trade.amount,
       direction: trade.market.direction,
@@ -452,7 +453,7 @@ export function TradePanel({
         const price = BigInt(trade.market.order.order.price);
         const feeBps = await getPartnerBrokerFeeBps(signer.provider!);
         const fee = computePartnerFee(usdcAmount, price, feeBps);
-        console.info('[polynuts] broker fill', {
+        polynutsLogger.info?.('broker fill', {
           broker: PARTNER_BROKER_ADDRESS,
           feeBps: feeBps.toString(),
           fee: fee.toString(),
@@ -482,20 +483,20 @@ export function TradePanel({
           gasLimit: (gas * 120n) / 100n,
         });
         receipt = await tx.wait();
-        console.info('[polynuts] broker fill done', { txHash: receipt?.hash });
+        polynutsLogger.info?.('broker fill done', { txHash: receipt?.hash });
       } else {
         // Default path: approve OptionBook and fill directly — taker pays
         // premium only, no added fee.
-        console.info('[polynuts] ensureAllowance', { usdcAddr, orderOptionBook, usdcAmount });
+        polynutsLogger.info?.('ensureAllowance', { usdcAddr, orderOptionBook, usdcAmount });
         const approveReceipt = await signerClient.erc20.ensureAllowance(
           usdcAddr,
           orderOptionBook,
           usdcAmount
         );
-        console.info('[polynuts] approval done', { txHash: approveReceipt?.hash ?? 'already-approved' });
-        console.info('[polynuts] fillOrder start');
+        polynutsLogger.info?.('approval done', { txHash: approveReceipt?.hash ?? 'already-approved' });
+        polynutsLogger.info?.('fillOrder start');
         receipt = await signerClient.optionBook.fillOrder(trade.market.order, usdcAmount);
-        console.info('[polynuts] fillOrder done', { txHash: receipt?.hash });
+        polynutsLogger.info?.('fillOrder done', { txHash: receipt?.hash });
       }
 
       // Write this trade to Supabase immediately so it appears in the
@@ -661,7 +662,7 @@ export function TradePanel({
         /user rejected|user denied|action_rejected/i.test(msgText) ||
         (err as { code?: number }).code === 4001;
       if (wasRejection) {
-        console.info('[polynuts] bet cancelled by user');
+        polynutsLogger.info?.('bet cancelled by user');
         toast.info('You rejected the bet. Click again to retry.', {
           id: t,
           duration: 5000,
