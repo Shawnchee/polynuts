@@ -31,11 +31,20 @@ export async function GET(req: NextRequest) {
   // leak arbitrary text into the accent-colour switch below.
   const dirRaw = (params.get('direction') ?? 'PUMP').toUpperCase();
   const direction = dirRaw === 'DUMP' || dirRaw === 'RANGE' ? dirRaw : 'PUMP';
-  // `q` is fully user-controlled and rendered into a public, uncached
-  // image — cap its length so it can't be abused to render huge text payloads.
+  // `q` is fully user-controlled and rendered into a public image, so cap its
+  // length (against huge text payloads) by CODE POINTS not UTF-16 units — a
+  // plain .slice(0,80) can bisect an emoji surrogate pair into a lone surrogate
+  // that crashes satori — and strip bidi overrides / control chars (U+202A–E,
+  // U+2066–9, LRM/RLM, \p{Cc}) so a U+202E can't reverse the rendered text.
   const rawHeadline = params.get('q');
-  const headline = rawHeadline
-    ? rawHeadline.slice(0, 80)
+  const cleanHeadline = rawHeadline
+    ? [...rawHeadline]
+        .slice(0, 80)
+        .join('')
+        .replace(/[‪-‮⁦-⁩‎‏\p{Cc}]/gu, '')
+    : '';
+  const headline = cleanHeadline
+    ? cleanHeadline
     : direction === 'DUMP'
     ? 'ETH dumped'
     : direction === 'RANGE'
