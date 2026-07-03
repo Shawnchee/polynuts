@@ -71,8 +71,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path?: stri
     if (upstream.ok) res.headers.set('Cache-Control', CACHE);
     return res;
   } catch (err) {
+    // Log the detail server-side; don't echo raw error text (which can carry
+    // upstream URLs / internals) back to the client.
+    console.error('[orderbook proxy] upstream fetch failed', err);
     return NextResponse.json(
-      { error: 'order book upstream unreachable', detail: String(err) },
+      { error: 'order book upstream unreachable' },
       { status: 502 }
     );
   } finally {

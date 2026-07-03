@@ -82,8 +82,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path?: stri
     }
     return res;
   } catch (err) {
+    // Log the detail server-side; don't echo raw error text (which can carry
+    // upstream URLs / internals) back to the client.
+    console.error('[indexer proxy] upstream fetch failed', err);
     return NextResponse.json(
-      { error: 'indexer upstream unreachable', detail: String(err) },
+      { error: 'indexer upstream unreachable' },
       { status: 502 }
     );
   } finally {

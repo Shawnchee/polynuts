@@ -85,7 +85,8 @@ export async function GET(req: NextRequest) {
   try {
     rows = await readUserTrades(sb, address);
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error('[me/trades] readUserTrades failed', e);
+    return NextResponse.json({ error: 'internal error' }, { status: 500 });
   }
 
   // Check the indexer ONLY for settlements on trades already in our DB, and only
@@ -187,7 +188,8 @@ export async function POST(req: NextRequest) {
   try {
     await writeFillToDb(sb, payload);
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error('[me/trades] writeFillToDb failed', e);
+    return NextResponse.json({ error: 'internal error' }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });
