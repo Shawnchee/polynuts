@@ -26,7 +26,9 @@ export async function GET(req: NextRequest) {
   const isPending = result === 'pending';
   const won = result === 'win';
   const bet = clampNumber(params.get('bet'), 0, 9_999_999) ?? 100;
-  const payout = clampNumber(params.get('payout'), 0, 99_999_999) ?? Math.round(bet * 1.61);
+  // No fabricated multiplier: when `payout` is omitted, fall back to the stake
+  // (a break-even 1.00x) rather than inventing a 1.61x win the user never earned.
+  const payout = clampNumber(params.get('payout'), 0, 99_999_999) ?? bet;
   // Whitelist direction to the three known values so a malformed param can't
   // leak arbitrary text into the accent-colour switch below.
   const dirRaw = (params.get('direction') ?? 'PUMP').toUpperCase();
@@ -62,7 +64,9 @@ export async function GET(req: NextRequest) {
   const accentBg = isPending ? dirAccentBg : won ? '#F0FDF4' : '#FEF2F2';
   const badgeLabel = isPending ? 'BETTING' : won ? 'WIN' : 'LOSS';
   const amountSign = isPending ? '+' : won ? '+' : '−';
-  const amountLabel = isPending ? 'Win up to' : won ? 'Won' : 'Lost';
+  // `payout` is the GROSS amount paid out (stake + winnings), not net profit, so
+  // the settled-win label is "Paid out" — "Won +$X" would imply $X is all profit.
+  const amountLabel = isPending ? 'Win up to' : won ? 'Paid out' : 'Lost';
 
   const image = new ImageResponse(
     (
