@@ -1,8 +1,14 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { MarketView } from '@/lib/sdk/markets';
 import { Countdown } from '@/components/ui/Countdown';
+import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
+
+// Beyond this age (ms) since the last price update, the spot is treated as
+// stale — greyed, with the live ITM/OTM read + "now" cushion suppressed.
+const STALE_PRICE_MS = 15_000;
 
 /**
  * "Price to beat" header — the single most decision-relevant comparison on a
@@ -108,14 +114,38 @@ export function PriceToBeat({
   market: MarketView;
   spot?: number;
 }) {
+  // Last price-update time for this asset + a slow ticker, so the "stale" flip
+  // is caught even when the feed has frozen (a frozen feed produces no new
+  // `spot` prop, so nothing else would re-render this to notice).
+  const at = useAppStore((s) =>
+    market.asset === 'ETH'
+      ? s.pricesAt.ETH
+      : market.asset === 'BTC'
+      ? s.pricesAt.BTC
+      : undefined
+  );
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 2000);
+    return () => clearInterval(id);
+  }, []);
+
   const t = computeTarget(market, spot);
   const known = typeof spot === 'number' && Number.isFinite(spot);
-  const itm = t.itm;
+  const isStale = known && (at == null || Date.now() - at > STALE_PRICE_MS);
+  // Suppress the live in/out-of-money read while the feed is stale — it's a
+  // right-now claim we can't stand behind against a frozen price.
+  const itm = isStale ? null : t.itm;
 
-  const statusLabel =
-    itm == null ? 'Waiting for price' : itm ? 'In the money' : 'Out of the money';
+  const statusLabel = isStale
+    ? 'Price stale'
+    : itm == null
+    ? 'Waiting for price'
+    : itm
+    ? 'In the money'
+    : 'Out of the money';
   const statusCls =
-    itm == null
+    isStale || itm == null
       ? 'bg-bg-elev text-text-dim'
       : itm
       ? 'bg-pump/15 text-pump dark:text-pump-dark'
@@ -143,7 +173,11 @@ export function PriceToBeat({
           <span
             className={cn(
               'num text-lg font-bold tabular-nums',
-              itm ? 'text-pump dark:text-pump-dark' : 'text-text'
+              isStale
+                ? 'text-text-dim'
+                : itm
+                ? 'text-pump dark:text-pump-dark'
+                : 'text-text'
             )}
           >
             {known ? fmtPrice(spot as number) : '—'}
@@ -170,7 +204,7 @@ export function PriceToBeat({
         </span>
       </div>
 
-      {cushionLine && (
+      {!isStale && cushionLine && (
         <div
           className={cn(
             'num mt-0.5 text-[11px] tabular-nums',

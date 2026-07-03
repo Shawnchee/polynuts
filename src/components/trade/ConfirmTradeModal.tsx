@@ -23,6 +23,9 @@ import { cn } from '@/lib/utils';
  */
 
 const COUNTDOWN_SECS = 10;
+// Beyond this age (ms) since the last price update, treat the spot as stale —
+// grey it and stop asserting live status/slippage against a frozen value.
+const STALE_PRICE_MS = 15_000;
 // Spot move beyond this fraction triggers a soft warning ("price moved")
 // at confirm time — but does NOT block the trade. The user already opted
 // in, so we surface the move and let them decide.
@@ -75,6 +78,19 @@ export function ConfirmTradeModal({
       ? s.prices.BTC
       : undefined
   );
+  // ...and the last-update timestamp for that asset, so we can flag a frozen
+  // feed instead of presenting a stale quote as if it were live.
+  const spotAt = useAppStore((s) =>
+    market.asset === 'ETH'
+      ? s.pricesAt.ETH
+      : market.asset === 'BTC'
+      ? s.pricesAt.BTC
+      : undefined
+  );
+  // Re-evaluated on every countdown tick (~1/s), which is what flips this once
+  // the feed goes quiet.
+  const spotStale =
+    typeof spot === 'number' && (spotAt == null || Date.now() - spotAt > STALE_PRICE_MS);
 
   // Refs for focus management — focus the primary action on open and trap
   // Tab within the dialog while it's mounted. Purely a11y; does not touch
@@ -266,7 +282,13 @@ export function ConfirmTradeModal({
   function handleConfirm() {
     let warning: string | null = null;
     const openSpot = openSpotRef.current;
-    if (openSpot != null && typeof spot === 'number' && openSpot > 0) {
+    if (spotStale) {
+      // The feed is frozen, so `spot` equals `openSpot` only because neither has
+      // moved on our side — NOT because the market is flat. Surface that instead
+      // of silently reading "0% drift" off two identical stale values as if the
+      // slippage check had passed against a live price.
+      warning = `${market.asset} price feed looks stale — the spot shown may be out of date.`;
+    } else if (openSpot != null && typeof spot === 'number' && openSpot > 0) {
       const drift = Math.abs(spot - openSpot) / openSpot;
       if (drift > SLIPPAGE_WARN_THRESHOLD) {
         const pct = (drift * 100).toFixed(2);
@@ -336,7 +358,7 @@ export function ConfirmTradeModal({
             ).toLocaleString('en-US', { maximumFractionDigits: 4 })}
           />
           <Row
-            label={`${market.asset} spot now`}
+            label={spotStale ? `${market.asset} spot (stale)` : `${market.asset} spot now`}
             value={
               typeof spot === 'number'
                 ? `$${spot.toLocaleString('en-US', {
@@ -345,6 +367,7 @@ export function ConfirmTradeModal({
                 : '—'
             }
             mono
+            muted={spotStale}
           />
           {!isVanilla && (
             <Row
@@ -385,7 +408,10 @@ export function ConfirmTradeModal({
         </div>
 
         <p className="mt-3 text-xs text-text-dim">
-          Live numbers refresh from the {market.asset} index. Trade settles at{' '}
+          {spotStale
+            ? `The ${market.asset} price feed looks delayed — the spot above may be out of date. `
+            : `Live numbers refresh from the ${market.asset} index. `}
+          Trade settles at{' '}
           {new Date(market.expiry * 1000).toUTCString().slice(5, 22)} UTC.
         </p>
 
@@ -423,11 +449,14 @@ function Row({
   value,
   tone,
   mono,
+  muted,
 }: {
   label: string;
   value: string;
   tone?: 'pump' | 'dump';
   mono?: boolean;
+  /** Grey the value out (e.g. a stale spot) — overrides the tone colour. */
+  muted?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between text-sm">
@@ -436,9 +465,13 @@ function Row({
         className={cn(
           'font-medium',
           mono !== false && 'num tabular-nums',
-          tone === 'pump' && 'text-pump dark:text-pump-dark',
-          tone === 'dump' && 'text-dump dark:text-dump-dark',
-          !tone && 'text-text'
+          muted
+            ? 'text-text-dim'
+            : cn(
+                tone === 'pump' && 'text-pump dark:text-pump-dark',
+                tone === 'dump' && 'text-dump dark:text-dump-dark',
+                !tone && 'text-text'
+              )
         )}
       >
         {value}
