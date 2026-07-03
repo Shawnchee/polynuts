@@ -189,9 +189,9 @@ function Legend({ hasData }: { hasData: boolean }) {
   );
 }
 
-function buildDays(entries: PnlEntry[]): DayCell[] {
+export function buildDays(entries: PnlEntry[]): DayCell[] {
   const today = startOfDay(new Date());
-  const start = new Date(today.getTime() - (DAYS - 1) * DAY_MS);
+  const start = startOfDay(new Date(today.getTime() - (DAYS - 1) * DAY_MS));
   const map = new Map<string, { pnl: number; count: number }>();
   for (const e of entries) {
     if (!Number.isFinite(e.pnl)) continue;
@@ -206,15 +206,17 @@ function buildDays(entries: PnlEntry[]): DayCell[] {
   // Align the grid so today sits in the last (rightmost) column.
   const todayWeekday = (today.getDay() + 6) % 7; // Mon=0..Sun=6
   const gridEnd = new Date(today.getTime() + (6 - todayWeekday) * DAY_MS);
-  const gridStart = new Date(gridEnd.getTime() - (DAYS - 1) * DAY_MS);
+  // Walk real local midnights via calendar arithmetic (setDate), not fixed
+  // 86.4M-ms steps: the 26-week window always spans a DST transition, and
+  // fixed stepping drifts an hour past the boundary — mis-keying cells so
+  // pre-transition PnL vanishes and the boundary day gets a duplicate key.
+  const cursor = startOfDay(new Date(gridEnd.getTime() - (DAYS - 1) * DAY_MS));
   const out: DayCell[] = [];
-  for (let w = 0; w < WEEKS; w++) {
-    for (let r = 0; r < 7; r++) {
-      const d = new Date(gridStart.getTime() + (w * 7 + r) * DAY_MS);
-      const k = isoKey(d);
-      const v = map.get(k);
-      out.push({ date: d, key: k, pnl: v?.pnl ?? 0, count: v?.count ?? 0 });
-    }
+  for (let i = 0; i < DAYS; i++) {
+    const k = isoKey(cursor);
+    const v = map.get(k);
+    out.push({ date: new Date(cursor), key: k, pnl: v?.pnl ?? 0, count: v?.count ?? 0 });
+    cursor.setDate(cursor.getDate() + 1);
   }
   return out;
 }
