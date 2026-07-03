@@ -10,18 +10,18 @@ const rpcOrigin = (() => {
   }
 })();
 
-// Content-Security-Policy. Shipped REPORT-ONLY first: the browser reports what
-// WOULD be blocked (console + report endpoint) without breaking anything, so we
-// can promote to an enforcing `Content-Security-Policy` once the deployed site
-// shows zero reports. connect-src is the high-value directive (an injected
-// script can't exfiltrate if it can't reach an attacker host) — the order book
-// and indexer are same-origin proxies now, so 'self' covers them; the only
-// real outbound calls are the RPC, Supabase, Deribit (live price feed) and the
-// wallet relays (WalletConnect / Coinbase). The TradingView spot chart is an
-// iframe → frame-src. To ENFORCE: script-src still allows 'unsafe-inline'
-// /'unsafe-eval' for Next's bootstrap + inline theme-boot script (layout.tsx)
-// + wallet wasm — switch that to a per-request nonce via proxy.ts before
-// flipping to enforcing. Even as-is it already blocks loading external scripts.
+// Content-Security-Policy — ENFORCING (`Content-Security-Policy`, below). The
+// real exfil containment is connect-src (an injected script can't phone home if
+// it can't reach an attacker host): the order book and indexer are same-origin
+// proxies now, so 'self' covers them; the only real outbound calls are the RPC,
+// Supabase, Deribit (live price feed) and the wallet relays (WalletConnect /
+// Coinbase), plus the TradingView spot-chart iframe → frame-src. frame-src,
+// object-src, base-uri and form-action are enforced too. script-src / style-src
+// stay permissive short-term — 'unsafe-inline'/'unsafe-eval' are required by
+// Next's bootstrap + the inline theme-boot script (layout.tsx) + wallet wasm,
+// so they are NOT locked down here; tightening them to a per-request nonce via
+// proxy.ts is a deferred follow-up. Until then those two directives do not
+// block inline/eval'd script — but external script LOADS are still blocked.
 const csp = [
   `default-src 'self'`,
   `script-src 'self' 'unsafe-inline' 'unsafe-eval'`,
@@ -62,8 +62,9 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-          // Report-only for now — see the `csp` comment above for the path to enforcing.
-          { key: 'Content-Security-Policy-Report-Only', value: csp },
+          // Enforcing — see the `csp` comment above; script-src/style-src stay
+          // permissive until the nonce follow-up.
+          { key: 'Content-Security-Policy', value: csp },
         ],
       },
     ];
