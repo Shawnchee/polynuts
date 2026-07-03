@@ -43,7 +43,7 @@ export default function Error({
           Try again
         </button>
         <Link
-          href="/"
+          href="/markets"
           className="press-scale rounded-md border border-line bg-bg-elev px-4 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-hover"
         >
           Back to markets

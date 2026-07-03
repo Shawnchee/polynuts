@@ -51,7 +51,7 @@ export default function GlobalError({
                 reuse the broken React tree. */}
             {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
-              href="/"
+              href="/markets"
               className="press-scale rounded-md border border-line bg-bg-elev px-4 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-hover"
             >
               Back to markets
