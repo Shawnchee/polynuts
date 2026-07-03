@@ -203,7 +203,11 @@ export function ConfirmTradeModal({
   const breakEven = useMemo(() => {
     if (isVanilla || sizeContracts <= 0n) return null;
     try {
-      const betUsdc = BigInt(Math.round(amount * 1_000_000));
+      // Break even against the TRUE out-of-pocket cost = premium + broker fee,
+      // so the break-even line agrees with the payout tone below (which compares
+      // to premium + fee). Premium-only would understate the level the trade has
+      // to reach to stop losing money.
+      const betUsdc = BigInt(Math.round(amount * 1e6)) + feeUsdc;
       const lo = market.strikesAsc[0];
       const hi = market.strikesAsc[market.strikesAsc.length - 1];
       if (!lo || !hi) return null;
@@ -235,7 +239,7 @@ export function ConfirmTradeModal({
     } catch {
       return null;
     }
-  }, [client, amount, sizeContracts, market, isVanilla, isCallDir]);
+  }, [client, amount, feeUsdc, sizeContracts, market, isVanilla, isCallDir]);
 
   const projectedPayoutUsd =
     projectedPayout != null
