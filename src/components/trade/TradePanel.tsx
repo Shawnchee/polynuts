@@ -549,25 +549,56 @@ export function TradePanel({
               fee_usdc: Number(fromBigInt(trade.feeUsdc, 6)),
               created_at: new Date().toISOString(),
             };
-            fetch('/api/me/trades', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-            })
-              .then((res) => {
-                // Once the row is in the DB, refresh the portfolio history so
-                // the real fill appears immediately (no 30s wait) — this is
-                // what lets us drop the optimistic local row that used to
-                // double-up the table.
-                if (res.ok && address) {
-                  queryClient.invalidateQueries({
-                    queryKey: ['me-trades', address.toLowerCase()],
+            // The fill is already on-chain; this POST only mirrors it into the
+            // DB so it shows in History without waiting for the indexer. It's a
+            // fire-and-forget background task, but a single dropped write (a
+            // rate-limited 429 or a transient 5xx — neither of which rejects
+            // fetch) would leave the just-paid bet invisible in BOTH Open
+            // Positions (indexer lag) and History (DB miss). So retry once, and
+            // if it still fails, tell the user their bet IS confirmed on-chain
+            // and history is just lagging — rather than leaving them to wonder.
+            const meKey = address.toLowerCase();
+            const filledTxHash = receipt.hash;
+            const explorerUrl = signerClient.chainConfig.explorerUrl;
+            void (async () => {
+              for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                  const res = await fetch('/api/me/trades', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
                   });
+                  if (res.ok) {
+                    // Row is in the DB — refresh History so the real fill
+                    // appears immediately (no 30s wait). This is what lets us
+                    // drop the optimistic local row that used to double the table.
+                    queryClient.invalidateQueries({ queryKey: ['me-trades', meKey] });
+                    return;
+                  }
+                  // Non-OK (429 / 5xx) doesn't reject fetch — treat as a failure
+                  // and fall through to the retry / fallback toast.
+                  console.warn('[polynuts] write-on-fill non-ok', res.status);
+                } catch (err) {
+                  console.warn('[polynuts] write-on-fill attempt failed', err);
                 }
-              })
-              .catch((err) => {
-                console.warn('[polynuts] write-on-fill failed (non-critical)', err);
-              });
+                if (attempt === 0) await new Promise((r) => setTimeout(r, 1200));
+              }
+              toast.info(
+                <span>
+                  Bet confirmed on-chain (
+                  <a
+                    className="text-brand underline"
+                    href={`${explorerUrl}/tx/${filledTxHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    view tx
+                  </a>
+                  ) — history may take a minute to appear.
+                </span>,
+                { duration: 8000 }
+              );
+            })();
           }
         } catch (err) {
           console.warn('[polynuts] receipt parse failed (non-critical)', err);
