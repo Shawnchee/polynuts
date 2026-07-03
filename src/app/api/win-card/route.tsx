@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og';
 import type { NextRequest } from 'next/server';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 // Node.js runtime, not edge: next/og's ImageResponse bundles satori + resvg
 // WASM (~1 MB), which trips Vercel's 1 MB edge-function size limit on the free
@@ -8,6 +9,12 @@ import type { NextRequest } from 'next/server';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
+  // ImageResponse runs satori + resvg (CPU + ~1 MB WASM) per render, and the CDN
+  // cache key is the full query string — a `?q=<random>` cache-busts every hit
+  // to a fresh expensive render, a billable compute/concurrency DoS. Cap per-IP.
+  const limited = enforceRateLimit(req, 'win-card', 60, 60_000);
+  if (limited) return limited;
+
   const params = req.nextUrl.searchParams;
 
   // result:
