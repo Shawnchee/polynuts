@@ -122,7 +122,7 @@ Every fill includes a **referrer fee** built into the Thetanuts V4 protocol. Pol
 This is a pure fee-on-fill model:
 - No spread markup
 - No protocol tax on winnings
-- No hidden fees — the taker pays only the premium
+- No hidden fees — the taker pays the premium plus a flat 0.10% broker fee, disclosed upfront
 
 ---
 

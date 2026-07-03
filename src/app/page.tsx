@@ -35,8 +35,8 @@ const STEPS = [
   {
     step: '03',
     icon: 'settle',
-    title: 'Win or lose — instantly',
-    body: 'When the market settles, the on-chain oracle records the price. Winners collect their USDC payout automatically — no claim needed.',
+    title: 'Win or lose — settled at expiry',
+    body: 'At expiry, the on-chain oracle records the price and the market settles automatically. Winners collect their USDC payout on-chain — no claim needed.',
   },
 ];
 
@@ -121,7 +121,7 @@ export default function LandingPage() {
 
             <p className="max-w-md text-base leading-relaxed text-white/55 sm:text-lg">
               Bet whether BTC or ETH will pump, dump, or range — in the next hour, day,
-              or week. Fixed risk. Instant settlement. No custody.
+              or week. Fixed risk. Settles on-chain at expiry. No custody.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
