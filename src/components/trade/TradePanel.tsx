@@ -40,7 +40,7 @@ import {
 } from '@/components/trade/ConfirmTradeModal';
 import { useAppStore } from '@/store/app';
 import { cn } from '@/lib/utils';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronDown, Loader2 } from 'lucide-react';
 
 type ChartTab = 'payout' | 'spot';
@@ -130,10 +130,21 @@ export function TradePanel({
   const readClient = getReadClient();
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  // Partner-broker fee rate (bps), read once on-chain when a broker is
-  // configured. Immutable per broker (getPartnerBrokerFeeBps caches it), so this
-  // is at most one RPC call per session and the fill path reuses the same cache.
-  const [feeBps, setFeeBps] = useState<bigint | null>(null);
+  // Partner-broker fee rate (bps), read on-chain when a broker is configured.
+  // Immutable per broker (getPartnerBrokerFeeBps caches it), so this is at most
+  // one RPC per session, shared with the fill path. Wrapped in React Query so a
+  // transient RPC failure is RETRIED rather than silently leaving the fee at
+  // $0.00 for the whole session while the fill still charges it. null until it
+  // resolves, and when no broker is configured (default OptionBook path).
+  const { data: feeBps = null } = useQuery({
+    queryKey: ['partner-fee-bps', PARTNER_BROKER_ADDRESS],
+    enabled: !!PARTNER_BROKER_ADDRESS,
+    queryFn: () => getPartnerBrokerFeeBps(readClient.provider),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: 5,
+    retryDelay: (n) => Math.min(1000 * 2 ** n, 10_000),
+  });
 
   // SDK-driven max payout for the binary framing (multiplier + implied odds)
   const { data: binary } = useMarketBinaryFraming(market);
@@ -171,25 +182,6 @@ export function TradePanel({
     }, 300);
     return () => clearTimeout(id);
   }, [market, amount, readClient]);
-
-  // Read the broker fee rate once so "Max loss" reflects premium + fee the taker
-  // actually pays. No broker configured → fee stays 0 and the UI is unchanged
-  // (default OptionBook path, premium only). Failure leaves it null; the fill
-  // path re-reads feeBps before charging, so a missed display read is harmless.
-  useEffect(() => {
-    if (!PARTNER_BROKER_ADDRESS) return;
-    let cancelled = false;
-    getPartnerBrokerFeeBps(readClient.provider)
-      .then((b) => {
-        if (!cancelled) setFeeBps(b);
-      })
-      .catch(() => {
-        /* leave null — see note above */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [readClient]);
 
   // Broker fee on the current bet, in 6-dec USDC (0 when no broker). Mirrors the
   // exact inputs the fill path uses (typed amount + order price + feeBps) so the
