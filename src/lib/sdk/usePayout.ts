@@ -2,8 +2,28 @@
 
 import { useMemo } from 'react';
 import { useQuery, useQueries } from '@tanstack/react-query';
-import { getReadClient } from './clients';
+import { getReadClient, PARTNER_BROKER_ADDRESS } from './clients';
+import { getPartnerBrokerFeeBps } from './partnerBroker';
 import { getProbePrices, type MarketView } from './markets';
+
+/**
+ * Fold the partner-broker fee into the per-contract cost used to derive the
+ * multiplier + implied odds. The taker pays premium PLUS the broker's feeBps on
+ * top, so the effective cost is HIGHER — which makes the return multiple a touch
+ * lower and the implied probability a touch higher (the honest, fee-inclusive
+ * framing). No broker configured (or a failed fee read) → premium-only cost, so
+ * the default OptionBook path is unchanged. getPartnerBrokerFeeBps caches, so
+ * this is at most one RPC per session shared with the fill path.
+ */
+async function feeInclusiveCost6dec(costPerContract6dec: bigint): Promise<bigint> {
+  if (!PARTNER_BROKER_ADDRESS || costPerContract6dec <= 0n) return costPerContract6dec;
+  try {
+    const feeBps = await getPartnerBrokerFeeBps(getReadClient().provider);
+    return (costPerContract6dec * (10_000n + feeBps)) / 10_000n;
+  } catch {
+    return costPerContract6dec;
+  }
+}
 
 /**
  * On-chain max payout for a given market at a given numContracts size.
@@ -81,7 +101,8 @@ export function useMarketBinaryFraming(market: MarketView | null) {
         6
       );
       if (costPerContract6dec === 0n) return null;
-      const multiplier = Number(maxPayout) / Number(costPerContract6dec);
+      const cost = await feeInclusiveCost6dec(costPerContract6dec);
+      const multiplier = Number(maxPayout) / Number(cost);
       if (!Number.isFinite(multiplier) || multiplier <= 1) return null;
       const yesProbability = Math.min(0.99, Math.max(0.01, 1 / multiplier));
       return { maxPayoutPerUnit: maxPayout, multiplier, yesProbability };
@@ -146,7 +167,8 @@ export function useMarketBinaryFramings(markets: MarketView[]) {
           6
         );
         if (costPerContract6dec === 0n) return null;
-        const multiplier = Number(maxPayout) / Number(costPerContract6dec);
+        const cost = await feeInclusiveCost6dec(costPerContract6dec);
+        const multiplier = Number(maxPayout) / Number(cost);
         if (!Number.isFinite(multiplier) || multiplier <= 1) return null;
         const yesProbability = Math.min(0.99, Math.max(0.01, 1 / multiplier));
         return { maxPayoutPerUnit: maxPayout, multiplier, yesProbability };
