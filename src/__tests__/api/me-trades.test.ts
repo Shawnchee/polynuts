@@ -11,6 +11,7 @@ vi.mock('@/lib/supabase/sync', () => ({
   syncSettlementsOnly: vi.fn(async () => ({ settlementsUpserted: 1 })),
   writeFillToDb: vi.fn(async () => undefined),
   verifyFillOnChain: vi.fn(async () => ({ ok: true, premiumUsdc: 5 })),
+  deriveBrokerFeeUsdc: vi.fn(async () => 0.005),
   readUserTrades: vi.fn(async () => [
     {
       id: 1,
@@ -206,6 +207,18 @@ describe('POST /api/me/trades', () => {
     // Authoritative on-chain premium ($5), NOT the client's inflated $999,999.
     expect(written.notional_usdc).toBe(5);
     expect(written.entry_price).toBeCloseTo(0.5, 6); // 5 / 10 contracts
+  });
+
+  it('persists the server-derived broker fee (never the client claim)', async () => {
+    vi.mocked(verifyFillOnChain).mockResolvedValueOnce({ ok: true, premiumUsdc: 5 });
+    const res = await POST(makePost(validPayload) as never);
+    expect(res.status).toBe(200);
+    const written = vi.mocked(writeFillToDb).mock.calls.at(-1)![1] as {
+      fee_usdc: number | null;
+    };
+    // Comes from deriveBrokerFeeUsdc(client, premium) — mocked to 0.005 here —
+    // NOT from anything the client POSTed.
+    expect(written.fee_usdc).toBe(0.005);
   });
 
   it('returns 400 for a negative numeric field', async () => {

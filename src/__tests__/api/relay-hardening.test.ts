@@ -10,6 +10,7 @@ vi.mock('@/lib/supabase/sync', () => ({
   syncSettlementsOnly: vi.fn(async () => ({ settlementsUpserted: 0 })),
   writeFillToDb: vi.fn(async () => undefined),
   verifyFillOnChain: vi.fn(async () => ({ ok: true, premiumUsdc: 5 })),
+  deriveBrokerFeeUsdc: vi.fn(async () => 0),
   readUserTrades: vi.fn(async () => [] as unknown[]),
 }));
 

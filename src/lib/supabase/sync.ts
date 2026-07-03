@@ -235,6 +235,49 @@ export function feeUsdcOf(v: number | string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+// ─── Server-derived broker fee (write path) ──────────────────────────────────
+// The taker pays the broker's immutable feeBps ON TOP of the option premium —
+// the OrderFilled premium (verifyFillOnChain) excludes it. To store an honest
+// fee_usdc per trade WITHOUT trusting the client's claim, we re-derive it the
+// same way the client does: the VERIFIED on-chain premium × the broker feeBps.
+// feeBps is immutable per broker, so read it once and cache it per instance.
+const BROKER_FEE_ABI = ['function feeBps() view returns (uint256)'];
+let _brokerFeeBps: bigint | null = null;
+
+/** Pure: broker fee in USDC for a premium + feeBps (premium × feeBps / 1e4). */
+export function brokerFeeFromPremium(premiumUsdc: number, feeBps: bigint): number {
+  if (feeBps <= 0n || !Number.isFinite(premiumUsdc) || premiumUsdc <= 0) return 0;
+  return Number(((premiumUsdc * Number(feeBps)) / 10_000).toFixed(USDC_DECIMALS));
+}
+
+/** Read the configured broker's immutable feeBps (cached). 0n when no broker. */
+export async function getBrokerFeeBps(client: ThetanutsClient): Promise<bigint> {
+  const broker = configuredBrokerAddress();
+  if (!broker) return 0n;
+  if (_brokerFeeBps != null) return _brokerFeeBps;
+  const contract = new ethers.Contract(broker, BROKER_FEE_ABI, client.provider);
+  _brokerFeeBps = (await contract.feeBps()) as bigint;
+  return _brokerFeeBps;
+}
+
+/** Test-only: reset the cached broker feeBps for deterministic assertions. */
+export function _resetBrokerFeeBpsCache(): void {
+  _brokerFeeBps = null;
+}
+
+/**
+ * Server-derive the broker fee (USDC) a fill paid, from the VERIFIED on-chain
+ * premium. Returns 0 when no broker is configured (no RPC). Never trusts the
+ * client's claimed fee — this is the write-path counterpart to feeUsdcOf.
+ */
+export async function deriveBrokerFeeUsdc(
+  client: ThetanutsClient,
+  premiumUsdc: number,
+): Promise<number> {
+  const feeBps = await getBrokerFeeBps(client);
+  return brokerFeeFromPremium(premiumUsdc, feeBps);
+}
+
 export interface SyncResult {
   tradesUpserted: number;
   settlementsUpserted: number;
@@ -256,6 +299,10 @@ export interface FillPayload {
   notional_usdc: number;
   // Real per-contract premium for UI fills; null when unknown (recovered).
   entry_price: number | null;
+  // Broker fee (USDC) the taker paid on top of premium, server-derived on the
+  // UI write path (deriveBrokerFeeUsdc). Optional: the cron-recovery path can't
+  // derive it, so it stays unset there (NULL → treated as 0 by feeUsdcOf).
+  fee_usdc?: number | null;
   created_at: string;
 }
 

@@ -13,6 +13,7 @@ import {
   verifyFillOnChain,
   feeInclusiveRealized,
   feeUsdcOf,
+  brokerFeeFromPremium,
 } from '@/lib/supabase/sync';
 
 describe('bigintToNumber', () => {
@@ -171,6 +172,24 @@ describe('feeInclusiveRealized', () => {
   it('treats a missing/NULL fee as 0 (legacy + no-broker rows unchanged)', () => {
     expect(feeInclusiveRealized(0.05, null)).toEqual({ pnl_usdc: 0.05, is_win: true });
     expect(feeInclusiveRealized(0.05, undefined)).toEqual({ pnl_usdc: 0.05, is_win: true });
+  });
+});
+
+describe('brokerFeeFromPremium', () => {
+  it('is premium × feeBps / 1e4 (10 bps of a $5 premium = $0.005)', () => {
+    expect(brokerFeeFromPremium(5, 10n)).toBe(0.005);
+    expect(brokerFeeFromPremium(100, 10n)).toBe(0.1);
+    expect(brokerFeeFromPremium(250, 25n)).toBe(0.625);
+  });
+  it('is 0 with no fee, no premium, or non-finite input (no-broker path stays free)', () => {
+    expect(brokerFeeFromPremium(100, 0n)).toBe(0);
+    expect(brokerFeeFromPremium(0, 10n)).toBe(0);
+    expect(brokerFeeFromPremium(-5, 10n)).toBe(0);
+    expect(brokerFeeFromPremium(Number.NaN, 10n)).toBe(0);
+  });
+  it('rounds to 6-dp USDC precision', () => {
+    // 3.333333... × 10 / 1e4 = 0.00333333… → quantized to 6 dp
+    expect(brokerFeeFromPremium(3.3333335, 10n)).toBe(0.003333);
   });
 });
 

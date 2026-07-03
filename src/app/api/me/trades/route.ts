@@ -9,6 +9,7 @@ import {
   writeFillToDb,
   readUserTrades,
   verifyFillOnChain,
+  deriveBrokerFeeUsdc,
   type FillPayload,
 } from '@/lib/supabase/sync';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
@@ -171,6 +172,20 @@ export async function POST(req: NextRequest) {
   // can't be re-POSTed with an inflated amount to fake leaderboard volume or
   // portfolio ROI. `created_at` is server-stamped (never trust the client's).
   const onChainPremium = verification.premiumUsdc;
+
+  // Store the broker fee the taker paid on top of premium, re-derived SERVER-SIDE
+  // from the verified premium × the broker's immutable feeBps — never the
+  // client's claimed fee. This is what lets realized PnL / is_win net the fee so
+  // a payout between premium and premium+fee reads as the net LOSS it is. A read
+  // failure stores null (treated as 0 downstream) rather than dropping a fill
+  // that is already confirmed on-chain.
+  let feeUsdc: number | null = null;
+  try {
+    feeUsdc = await deriveBrokerFeeUsdc(client, onChainPremium);
+  } catch (e) {
+    console.warn('[me/trades] broker fee derivation failed; storing null', e);
+  }
+
   const payload: FillPayload = {
     tx_hash: data.tx_hash!,
     option_id: data.option_id!,
@@ -181,6 +196,7 @@ export async function POST(req: NextRequest) {
     notional_usdc: onChainPremium,
     entry_price:
       data.contracts! > 0 ? onChainPremium / data.contracts! : data.entry_price!,
+    fee_usdc: feeUsdc,
     created_at: new Date().toISOString(),
   };
 
