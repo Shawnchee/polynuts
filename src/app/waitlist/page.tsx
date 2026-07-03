@@ -166,8 +166,8 @@ export default function WaitlistPage() {
 
             <p className="max-w-md text-base leading-relaxed text-white/55 sm:text-lg">
               Like Polymarket — but for options. Bet whether BTC or ETH will
-              pump, dump, or range: fixed risk, instant on-chain settlement, no
-              custody. Join the waitlist and we&apos;ll email you the second
+              pump, dump, or range: fixed risk, automatic on-chain settlement at
+              expiry, no custody. Join the waitlist and we&apos;ll email you the second
               it&apos;s live.
             </p>
 
