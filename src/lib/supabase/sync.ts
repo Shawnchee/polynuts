@@ -210,6 +210,31 @@ function indexerPnlUsd(p: Position | undefined): number | null {
   return usd8ToNumber(p.pnlUsd ?? null);
 }
 
+/**
+ * Fold the partner-broker fee into realized PnL. `basePnl` is the pre-fee PnL
+ * (`payout - premium`, from the indexer's pnlUsd or payout minus cost basis);
+ * `fee` is the broker fee the taker paid on top of premium in USDC. A payout
+ * that clears the premium but NOT premium+fee is a NET LOSS, so `is_win` keys
+ * off the fee-inclusive figure — this is what stops a real net loss rendering a
+ * green "WON". A missing/NULL fee is treated as 0 so legacy rows (and the
+ * default no-broker path, which pays no fee) stay exactly as before.
+ */
+export function feeInclusiveRealized(
+  basePnl: number,
+  fee: number | null | undefined,
+): { pnl_usdc: number; is_win: boolean } {
+  const pnl = basePnl - (fee != null && Number.isFinite(fee) ? fee : 0);
+  return { pnl_usdc: pnl, is_win: pnl > 0 };
+}
+
+/** Coerce a Supabase `numeric` fee_usdc cell (number | string | null) to a
+ *  finite number, defaulting a missing/NULL/garbage value to 0. */
+export function feeUsdcOf(v: number | string | null | undefined): number {
+  if (v == null) return 0;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export interface SyncResult {
   tradesUpserted: number;
   settlementsUpserted: number;
@@ -272,10 +297,11 @@ export async function syncSettlementsOnly(
 ): Promise<{ settlementsUpserted: number }> {
   const addr = address.toLowerCase();
 
-  // Fetch only open (unsettled) trades for this address.
+  // Fetch only open (unsettled) trades for this address. fee_usdc rides along so
+  // realized PnL can be netted of the broker fee below.
   const { data: dbTrades, error: dbErr } = await sb
     .from('trades')
-    .select('id, tx_hash, option_id, settlements(id)')
+    .select('id, tx_hash, option_id, fee_usdc, settlements(id)')
     .eq('taker_address', addr);
   if (dbErr) throw dbErr;
 
@@ -293,6 +319,13 @@ export async function syncSettlementsOnly(
         (t as { option_id: string }).option_id,
       ),
       (t as { id: number }).id,
+    ]),
+  );
+  // trade id → broker fee paid (USDC). NULL/absent → 0 (legacy + no-broker rows).
+  const feeById = new Map<number, number>(
+    openTrades.map((t) => [
+      (t as { id: number }).id,
+      feeUsdcOf((t as { fee_usdc?: number | string | null }).fee_usdc),
     ]),
   );
 
@@ -324,12 +357,15 @@ export async function syncSettlementsOnly(
         if (cost != null) pnl = payout - cost;
       }
       if (pnl == null) return null;
+      // Net the broker fee out of realized PnL so a payout that clears premium
+      // but not premium+fee reads as the net loss it is.
+      const { pnl_usdc, is_win } = feeInclusiveRealized(pnl, feeById.get(tradeId));
       return {
         trade_id: tradeId,
         settle_price: bigintToNumber(h.settlement!.settlementPrice, PRICE_DECIMALS),
         payout_usdc: payout,
-        pnl_usdc: pnl,
-        is_win: pnl > 0,
+        pnl_usdc,
+        is_win,
         // The CLOSE tx is the one that actually transfers the buyer's USDC
         // payout (verified on-chain: the `settle` tx only records the oracle
         // price and moves no money to the buyer). This is the "proof I got
@@ -412,16 +448,24 @@ export async function syncUserFromIndexer(
 
   if (tradeRows.length === 0) return { tradesUpserted, settlementsUpserted };
 
+  // Pull fee_usdc back alongside the id so realized PnL can be netted of the
+  // broker fee. On this cron path the upsert payload never sets fee_usdc, so the
+  // returned value is whatever a prior fill-write stored (or NULL → 0).
   const { data: upserted, error: upErr } = await sb
     .from('trades')
     .upsert(tradeRows, { onConflict: 'tx_hash,option_id' })
-    .select('id,tx_hash,option_id');
+    .select('id,tx_hash,option_id,fee_usdc');
   if (upErr) throw upErr;
   tradesUpserted = upserted?.length ?? 0;
 
   const byKey = new Map<string, number>();
+  const feeById = new Map<number, number>();
   for (const row of upserted ?? []) {
     byKey.set(tradeKey(row.tx_hash, row.option_id), row.id as number);
+    feeById.set(
+      row.id as number,
+      feeUsdcOf((row as { fee_usdc?: number | string | null }).fee_usdc),
+    );
   }
 
   const settlementRows = history
@@ -441,12 +485,14 @@ export async function syncUserFromIndexer(
         if (cost != null) pnl = payout - cost;
       }
       if (pnl == null) return null;
+      // Net the broker fee out of realized PnL (see feeInclusiveRealized).
+      const { pnl_usdc, is_win } = feeInclusiveRealized(pnl, feeById.get(tradeId));
       return {
         trade_id: tradeId,
         settle_price: bigintToNumber(h.settlement!.settlementPrice, PRICE_DECIMALS),
         payout_usdc: payout,
-        pnl_usdc: pnl,
-        is_win: pnl > 0,
+        pnl_usdc,
+        is_win,
         // The CLOSE tx is the one that actually transfers the buyer's USDC
         // payout (verified on-chain: the `settle` tx only records the oracle
         // price and moves no money to the buyer). This is the "proof I got

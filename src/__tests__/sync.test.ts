@@ -11,6 +11,8 @@ import {
   sideFromOptionType,
   findBuyerPosition,
   verifyFillOnChain,
+  feeInclusiveRealized,
+  feeUsdcOf,
 } from '@/lib/supabase/sync';
 
 describe('bigintToNumber', () => {
@@ -147,6 +149,38 @@ describe('findBuyerPosition', () => {
   it('returns undefined when buyer differs AND the entry tx differs', () => {
     const pos = mkBrokerPos('0xzzz999');
     expect(findBuyerPosition(mkHist('aaa111'), [pos])).toBeUndefined();
+  });
+});
+
+describe('feeInclusiveRealized', () => {
+  it('flips a marginal win to a net loss once the broker fee is applied', () => {
+    // Premium $100, payout $100.05 → +$0.05 before fee; a $0.10 broker fee makes
+    // the trade a net LOSS. This is the case that used to render a green "WON".
+    const basePnl = 100.05 - 100; // payout − premium
+    const { pnl_usdc, is_win } = feeInclusiveRealized(basePnl, 0.1);
+    expect(pnl_usdc).toBeCloseTo(-0.05, 6);
+    expect(is_win).toBe(false);
+  });
+
+  it('keeps a clear win a win after the fee', () => {
+    const { pnl_usdc, is_win } = feeInclusiveRealized(5, 0.1);
+    expect(pnl_usdc).toBeCloseTo(4.9, 6);
+    expect(is_win).toBe(true);
+  });
+
+  it('treats a missing/NULL fee as 0 (legacy + no-broker rows unchanged)', () => {
+    expect(feeInclusiveRealized(0.05, null)).toEqual({ pnl_usdc: 0.05, is_win: true });
+    expect(feeInclusiveRealized(0.05, undefined)).toEqual({ pnl_usdc: 0.05, is_win: true });
+  });
+});
+
+describe('feeUsdcOf', () => {
+  it('coerces numeric strings, defaults NULL/garbage to 0', () => {
+    expect(feeUsdcOf(0.1)).toBe(0.1);
+    expect(feeUsdcOf('0.1')).toBeCloseTo(0.1, 6);
+    expect(feeUsdcOf(null)).toBe(0);
+    expect(feeUsdcOf(undefined)).toBe(0);
+    expect(feeUsdcOf('not-a-number')).toBe(0);
   });
 });
 
