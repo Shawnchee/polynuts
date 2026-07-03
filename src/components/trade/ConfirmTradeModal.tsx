@@ -92,21 +92,36 @@ export function ConfirmTradeModal({
   }, [spot]);
 
   const [secsLeft, setSecsLeft] = useState(COUNTDOWN_SECS);
-  // Hold the timer in a ref so onConfirm doesn't have to read state.
+  // Absolute deadline captured ONCE on mount. Deriving the remaining seconds
+  // from a fixed deadline (instead of decrementing state on each interval tick)
+  // makes the countdown immune to the interval being torn down and recreated.
+  const deadlineRef = useRef(Date.now() + COUNTDOWN_SECS * 1000);
+  // Always invoke the LATEST onCancel, but WITHOUT making it an effect
+  // dependency: TradePanel passes a fresh inline arrow on every render and
+  // re-renders on every ~1s Deribit price tick. If the countdown effect
+  // depended on `onCancel`, it would clear+restart the interval every tick —
+  // which froze `secsLeft` at 10 and meant the modal never auto-cancelled.
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
   useEffect(() => {
+    // Empty deps: the interval is created ONCE and reads the fixed deadline, so
+    // prop-identity churn on onCancel can no longer stall or restart it. A
+    // sub-second tick keeps the displayed number responsive while still landing
+    // the auto-cancel promptly at the deadline.
     const id = setInterval(() => {
-      setSecsLeft((s) => {
-        if (s <= 1) {
-          clearInterval(id);
-          // Defer onCancel one tick so we don't setState-while-rendering.
-          setTimeout(onCancel, 0);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
+      const remaining = Math.max(
+        0,
+        Math.ceil((deadlineRef.current - Date.now()) / 1000)
+      );
+      setSecsLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(id);
+        // Defer one tick so we don't setState-while-rendering a sibling.
+        setTimeout(() => onCancelRef.current(), 0);
+      }
+    }, 250);
     return () => clearInterval(id);
-  }, [onCancel]);
+  }, []);
 
   // Escape closes (== cancel).
   useEffect(() => {
