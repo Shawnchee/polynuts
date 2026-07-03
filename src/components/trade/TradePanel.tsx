@@ -100,7 +100,6 @@ export function TradePanel({
   const { isConnected, address } = useAccount();
   const { signerClient, signer, ready, notReadyReason } = useSignerClient();
   const { data: balance } = useUsdcBalance();
-  const prependActivity = useAppStore((s) => s.prependActivity);
   const setTradeInProgress = useAppStore((s) => s.setTradeInProgress);
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -630,15 +629,6 @@ export function TradePanel({
         </div>,
         { id: t, duration: 12_000 }
       );
-
-      prependActivity({
-        id: `${trade.market.id}-${Date.now()}`,
-        ts: Date.now(),
-        kind: 'filled',
-        asset: trade.market.asset,
-        direction: trade.market.direction,
-        question: `${trade.market.direction} · $${trade.amount} · ${trade.market.asset}`,
-      });
 
       // Invalidate the portfolio/history caches so /portfolio reflects the
       // fresh position immediately. Without this the user sees stale data
