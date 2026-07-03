@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { ethers } from 'ethers';
-import { useAccount, useChainId, useConnectorClient } from 'wagmi';
+import { useAccount, useConnectorClient } from 'wagmi';
 import type { Account, Chain, Client, Transport } from 'viem';
 import { ThetanutsClient } from '@thetanuts-finance/thetanuts-client';
 import { createSignerClient, POLYNUTS_CHAIN_ID } from './clients';
@@ -44,12 +44,14 @@ export interface SignerClientState {
 }
 
 export function useSignerClient(): SignerClientState {
-  const { address: connectedAddress, isConnected } = useAccount();
-  const chainId = useChainId();
+  // walletChainId is the wallet's REAL network (per-connection, tracks
+  // chainChanged). useChainId() is pinned to the single-chain wagmi config
+  // and never reports the wallet being on the wrong chain.
+  const { address: connectedAddress, isConnected, chainId: walletChainId } = useAccount();
   const { data: connectorClient } = useConnectorClient();
 
   return useMemo<SignerClientState>(() => {
-    if (!isConnected || !connectorClient) {
+    if (!isConnected) {
       return {
         signerClient: null,
         signer: null,
@@ -58,13 +60,24 @@ export function useSignerClient(): SignerClientState {
         notReadyReason: 'disconnected',
       };
     }
-    if (chainId !== POLYNUTS_CHAIN_ID) {
+    // Check the chain BEFORE connectorClient: on a wrong network the connector
+    // client may be absent, and we must not mask that as 'disconnected'.
+    if (walletChainId !== POLYNUTS_CHAIN_ID) {
       return {
         signerClient: null,
         signer: null,
         address: connectedAddress,
         ready: false,
         notReadyReason: 'wrong-chain',
+      };
+    }
+    if (!connectorClient) {
+      return {
+        signerClient: null,
+        signer: null,
+        address: connectedAddress,
+        ready: false,
+        notReadyReason: 'disconnected',
       };
     }
     try {
@@ -87,5 +100,5 @@ export function useSignerClient(): SignerClientState {
         notReadyReason: 'adapter-failed',
       };
     }
-  }, [isConnected, connectorClient, connectedAddress, chainId]);
+  }, [isConnected, connectorClient, connectedAddress, walletChainId]);
 }

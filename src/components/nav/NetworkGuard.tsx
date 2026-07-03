@@ -2,7 +2,7 @@
 
 import { AlertTriangle } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useChainId, useSwitchChain } from 'wagmi';
+import { useAccount, useSwitchChain } from 'wagmi';
 import { POLYNUTS_CHAIN_ID } from '@/lib/sdk/clients';
 import { cn } from '@/lib/utils';
 
@@ -27,14 +27,17 @@ const CHAIN_NAMES: Record<number, string> = {
  * on Base. Otherwise: full-width red strip with X icon + Switch CTA.
  */
 export function NetworkGuard() {
-  const { isConnected } = useAccount();
-  const chainId = useChainId();
+  // Read the wallet's REAL chain from useAccount (per-connection, tracks the
+  // wallet's `chainChanged` event). useChainId() is pinned to the single-chain
+  // wagmi config's top-level state and returns 8453 forever regardless of the
+  // wallet's actual network, so every wrong-chain path was structurally dead.
+  const { isConnected, chainId: walletChainId } = useAccount();
   const { switchChain, isPending } = useSwitchChain();
 
   if (!isConnected) return null;
-  if (chainId === POLYNUTS_CHAIN_ID) return null;
+  if (walletChainId === undefined || walletChainId === POLYNUTS_CHAIN_ID) return null;
 
-  const currentName = CHAIN_NAMES[chainId] ?? `chain ${chainId}`;
+  const currentName = CHAIN_NAMES[walletChainId] ?? `chain ${walletChainId}`;
 
   return (
     <div
@@ -91,13 +94,14 @@ export function NetworkGuard() {
  * red when on the wrong chain. Click to switch / open the chain modal.
  */
 export function ChainStatusChip() {
-  const { isConnected } = useAccount();
-  const chainId = useChainId();
+  // See NetworkGuard above: the wallet's true chain comes from useAccount,
+  // not useChainId (which is stuck at the configured chain).
+  const { isConnected, chainId: walletChainId } = useAccount();
   const { switchChain } = useSwitchChain();
 
-  if (!isConnected) return null;
-  const onBase = chainId === POLYNUTS_CHAIN_ID;
-  const name = CHAIN_NAMES[chainId] ?? `chain ${chainId}`;
+  if (!isConnected || walletChainId === undefined) return null;
+  const onBase = walletChainId === POLYNUTS_CHAIN_ID;
+  const name = CHAIN_NAMES[walletChainId] ?? `chain ${walletChainId}`;
 
   if (onBase) {
     return (
