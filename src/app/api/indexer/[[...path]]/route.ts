@@ -30,17 +30,35 @@ const UPSTREAM_TIMEOUT_MS = 15_000;
 const PROXY_RATE_LIMIT = 1_200;
 const PROXY_RATE_WINDOW_MS = 60_000;
 
+// Allowlist of the exact indexer subpaths the browser SDK reads through this
+// relay. The ONLY caller is the browser client in src/lib/sdk/clients.ts
+// (server-side sync in src/lib/supabase/sync.ts talks to the upstream directly,
+// never through here). Anything else 404s so this can't be abused as an
+// arbitrary-path relay to reach non-public upstream endpoints, as an
+// IP-anonymising hop, or for DoS amplification. Evidence — the browser methods
+// that route here (SDK V4 @thetanuts-finance/thetanuts-client):
+//   getStatsFromIndexer()          -> /api/v1/book/stats
+//   getBookDailyStats()            -> /api/v1/book/stats/daily
+//   getUserPositionsFromIndexer()  -> /api/v1/book/user/{addr}/positions
+//   getUserHistoryFromIndexer()    -> /api/v1/book/user/{addr}/history
+const ADDR = '0x[0-9a-fA-F]{40}';
+const ALLOWED_SUBPATHS: RegExp[] = [
+  /^api\/v1\/book\/stats$/,
+  /^api\/v1\/book\/stats\/daily$/,
+  new RegExp(`^api/v1/book/user/${ADDR}/(positions|history)$`),
+];
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
   const limited = enforceRateLimit(req, 'indexer', PROXY_RATE_LIMIT, PROXY_RATE_WINDOW_MS);
   if (limited) return limited;
   const { path } = await ctx.params;
-  // The SDK builds absolute browser URLs like
-  //   {origin}/api/indexer/api/v1/book/stats/daily   (stateApiUrl)
-  //   {origin}/api/indexer/api/v1/book/user/0x.../history  (indexerApiUrl)
-  // The optional catch-all gives us whichever subpath the SDK used; forward it
-  // verbatim to the upstream indexer at the same path.
-  const suffix = path?.length ? `/${path.join('/')}` : '/';
-  const url = `${UPSTREAM}${suffix}${req.nextUrl.search}`;
+  // The optional catch-all gives us whichever subpath the SDK used; only forward
+  // it if it's a pinned, real SDK route (see ALLOWED_SUBPATHS).
+  const subpath = path?.length ? path.join('/') : '';
+  if (!ALLOWED_SUBPATHS.some((re) => re.test(subpath))) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
+  const url = `${UPSTREAM}/${subpath}${req.nextUrl.search}`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);

@@ -24,19 +24,31 @@ const UPSTREAM_TIMEOUT_MS = 15_000;
 
 // Generous per-IP cap (tunable). Bounds a cache-busting flood of this open
 // relay without throttling legit polling, which is mostly served from the CDN
-// cache above and never invokes this function. No path allowlist: scheme+host
-// are hardcoded so this can't be repointed at another host, and the SDK's exact
-// path set isn't pinned here — the rate limit is what bounds abuse.
+// cache above and never invokes this function. Scheme+host are hardcoded so this
+// can't be repointed at another host, and the subpath is pinned to the SDK's
+// real routes by ALLOWED_SUBPATHS below.
 const PROXY_RATE_LIMIT = 1_200;
 const PROXY_RATE_WINDOW_MS = 60_000;
+
+// Allowlist of the exact order-book subpaths the browser SDK reads through this
+// relay. The only caller is the browser client in src/lib/sdk/clients.ts;
+// anything else 404s so this can't be used as an arbitrary-path relay / IP hop.
+// Evidence (SDK V4 @thetanuts-finance/thetanuts-client, `api` module):
+//   fetchOrders() / getMarketData()  -> request("/")       (worker root)
+//   filterOrders()                   -> request("/orders")
+const ALLOWED_SUBPATHS = new Set(['', 'orders']);
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
   const limited = enforceRateLimit(req, 'orderbook', PROXY_RATE_LIMIT, PROXY_RATE_WINDOW_MS);
   if (limited) return limited;
   const { path } = await ctx.params;
-  // fetchOrders / getMarketData hit the worker root ("/"); filterOrders hits
-  // "/orders". The optional catch-all preserves whichever subpath the SDK used.
-  const suffix = path?.length ? `/${path.join('/')}` : '/';
+  // The optional catch-all preserves whichever subpath the SDK used; only
+  // forward pinned, real SDK routes (see ALLOWED_SUBPATHS).
+  const subpath = path?.length ? path.join('/') : '';
+  if (!ALLOWED_SUBPATHS.has(subpath)) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
+  const suffix = subpath ? `/${subpath}` : '/';
   const url = `${UPSTREAM}${suffix}${req.nextUrl.search}`;
 
   const controller = new AbortController();
