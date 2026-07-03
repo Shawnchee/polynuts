@@ -58,12 +58,16 @@ export interface ConfirmTradeModalProps {
   onConfirm: (slippageWarning: string | null) => void;
   /** Fires on countdown expiry, X click, or backdrop click. */
   onCancel: () => void;
+  /** True once a fill is in flight — disables the Confirm button so a repeat
+   *  click can't kick off a second submission. */
+  submitting?: boolean;
 }
 
 export function ConfirmTradeModal({
   pending,
   onConfirm,
   onCancel,
+  submitting = false,
 }: ConfirmTradeModalProps) {
   const { market, amount, numContracts, totalCollateral, maxPayoutAtFill, feeUsdc } =
     pending;
@@ -280,6 +284,9 @@ export function ConfirmTradeModal({
   const costUsd = premiumUsd + feeUsd;
 
   function handleConfirm() {
+    // Ignore a repeat confirm once a fill is already in flight (the button is
+    // also disabled, but guard the handler too in case it fires another way).
+    if (submitting) return;
     let warning: string | null = null;
     const openSpot = openSpotRef.current;
     if (spotStale) {
@@ -425,17 +432,26 @@ export function ConfirmTradeModal({
           <button
             ref={confirmBtnRef}
             onClick={handleConfirm}
+            disabled={submitting}
+            aria-busy={submitting}
             className={cn(
               'press-scale flex-[1.5] rounded-md py-2.5 text-sm font-semibold text-white transition-colors',
               market.direction === 'PUMP'
                 ? 'bg-pump hover:bg-pump/90 glow-pump'
                 : market.direction === 'DUMP'
                 ? 'bg-dump hover:bg-dump/90 glow-dump'
-                : 'bg-range hover:bg-range/90 glow-range'
+                : 'bg-range hover:bg-range/90 glow-range',
+              submitting && 'cursor-not-allowed opacity-60'
             )}
           >
-            Confirm — auto-cancels in{' '}
-            <span className="num tabular-nums">{secsLeft}</span>s
+            {submitting ? (
+              'Placing bet…'
+            ) : (
+              <>
+                Confirm — auto-cancels in{' '}
+                <span className="num tabular-nums">{secsLeft}</span>s
+              </>
+            )}
           </button>
         </div>
       </div>

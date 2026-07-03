@@ -413,6 +413,10 @@ export function TradePanel({
   }
 
   async function confirmAndFillBet(slippageWarning: string | null) {
+    // Explicit re-entry guard: a fill is already in flight, so ignore a repeat
+    // trigger (double-click / stray re-fire) rather than sending a second tx.
+    // Previously only incidentally prevented by the confirm modal unmounting.
+    if (submitting) return;
     const trade = pendingTrade;
     setPendingTrade(null);
     if (!trade) return;
@@ -1034,6 +1038,7 @@ export function TradePanel({
       {pendingTrade && (
         <ConfirmTradeModal
           pending={pendingTrade}
+          submitting={submitting}
           onConfirm={(warning) => {
             void confirmAndFillBet(warning);
           }}
