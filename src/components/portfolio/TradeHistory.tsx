@@ -338,7 +338,7 @@ function EmptyState({ connected }: { connected: boolean }) {
         Place a bet and your fills, settlements, and P&amp;L will light up here.
       </p>
       <Link
-        href="/"
+        href="/markets"
         className="press-scale rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
       >
         Browse markets
