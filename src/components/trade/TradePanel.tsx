@@ -545,6 +545,11 @@ export function TradePanel({
               contracts: contractsHuman,
               notional_usdc: contractsHuman * pricePerContractUsd,
               entry_price: pricePerContractUsd,
+              // Broker fee paid on top of premium (0 on the default OptionBook
+              // path). Recorded so realized PnL / is_win can be netted of it —
+              // see feeInclusiveRealized in sync.ts. Snapshotted at stage time
+              // as trade.feeUsdc, the same figure the user confirmed.
+              fee_usdc: Number(fromBigInt(trade.feeUsdc, 6)),
               created_at: new Date().toISOString(),
             };
             fetch('/api/me/trades', {
