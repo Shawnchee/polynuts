@@ -27,6 +27,19 @@ function isFiniteNonNeg(x: unknown): x is number {
   return typeof x === 'number' && Number.isFinite(x) && x >= 0;
 }
 
+// market_label is the one free-text field a client controls, and it ships in the
+// public recent-trades JSON to every leaderboard visitor. A verified fill can be
+// re-POSTed with a huge or control-char-laden label, so bound the length and
+// strip C0/DEL/C1 control characters (incl. newlines) before persisting — payload
+// bloat / content-abuse defence. (Rendering is a React text node, so not XSS.)
+const MARKET_LABEL_MAX = 80;
+function sanitizeMarketLabel(raw: unknown): string {
+  return String(raw)
+    .slice(0, MARKET_LABEL_MAX)
+    // Strip C0 controls + DEL + C1 controls (includes newlines/tabs).
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+}
+
 // Both handlers fan out to a paid RPC / indexer, so cap per-IP request rate.
 // GET (read + settlement sync) is polled by the portfolio page; POST (write +
 // on-chain verification, the costlier path) fires once per placed bet.
@@ -149,7 +162,7 @@ export async function POST(req: NextRequest) {
     tx_hash: data.tx_hash!,
     option_id: data.option_id!,
     taker_address: data.taker_address!,
-    market_label: data.market_label!,
+    market_label: sanitizeMarketLabel(data.market_label),
     side: data.side!,
     contracts: data.contracts!,
     notional_usdc: onChainPremium,

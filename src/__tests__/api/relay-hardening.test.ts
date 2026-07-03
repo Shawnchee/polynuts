@@ -1,10 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Mock Supabase + sync for the /api/me/trades handlers exercised below.
+vi.mock('@/lib/supabase/server', () => ({
+  hasSupabaseConfig: vi.fn(() => true),
+  getSupabaseService: vi.fn(() => ({})),
+}));
+vi.mock('@/lib/supabase/sync', () => ({
+  getSyncClient: vi.fn(() => ({})),
+  syncSettlementsOnly: vi.fn(async () => ({ settlementsUpserted: 0 })),
+  writeFillToDb: vi.fn(async () => undefined),
+  verifyFillOnChain: vi.fn(async () => ({ ok: true, premiumUsdc: 5 })),
+  readUserTrades: vi.fn(async () => [] as unknown[]),
+}));
+
 import { NextRequest } from 'next/server';
 import { GET as indexerGET } from '@/app/api/indexer/[[...path]]/route';
 import { GET as orderbookGET } from '@/app/api/orderbook/[[...path]]/route';
+import { POST as tradesPOST } from '@/app/api/me/trades/route';
+import { writeFillToDb } from '@/lib/supabase/sync';
 import { resetRateLimit } from '@/lib/rate-limit';
 
 const ADDR = '0x' + 'a'.repeat(40);
+const TX = '0x' + 'b'.repeat(64);
 
 function pctx(path?: string[]) {
   return { params: Promise.resolve({ path }) };
@@ -101,4 +118,40 @@ describe('orderbook proxy subpath allowlist', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
   }
+});
+
+// ── ITEM 2: bound + sanitize market_label ───────────────────────────────────
+describe('POST /api/me/trades market_label sanitization', () => {
+  beforeEach(() => {
+    resetRateLimit();
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
+    vi.mocked(writeFillToDb).mockClear();
+  });
+
+  it('bounds length to 80 and strips control characters before writing', async () => {
+    const dirty = 'ETH ' + '\u0000\u001b\n\r\t' + ' $2000 ' + 'A'.repeat(200);
+    const res = await tradesPOST(
+      new NextRequest('http://localhost/api/me/trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tx_hash: TX,
+          option_id: ADDR,
+          taker_address: ADDR,
+          market_label: dirty,
+          side: 'PUMP',
+          contracts: 10,
+          notional_usdc: 5,
+          entry_price: 0.05,
+        }),
+      }) as never,
+    );
+    expect(res.status).toBe(200);
+    const written = vi.mocked(writeFillToDb).mock.calls.at(-1)![1] as {
+      market_label: string;
+    };
+    expect(written.market_label.length).toBeLessThanOrEqual(80);
+    // No C0/DEL/C1 control characters survive.
+    expect(written.market_label).not.toMatch(/[\u0000-\u001F\u007F-\u009F]/);
+  });
 });
