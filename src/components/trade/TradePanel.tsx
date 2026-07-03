@@ -891,7 +891,10 @@ export function TradePanel({
           <SummaryRow label="Structure" value={market.structureName} mono={false} />
           <SummaryRow
             label="Settles"
-            value={new Date(market.expiry * 1000).toUTCString().slice(17, 22) + ' UTC'}
+            // Include the DATE, not just the time — slice(17,22) showed "08:00
+            // UTC", which reads as today for a market days out. slice(5,22)
+            // gives "10 May 2026 08:00", matching ConfirmTradeModal.
+            value={new Date(market.expiry * 1000).toUTCString().slice(5, 22) + ' UTC'}
             mono={false}
           />
         </div>
