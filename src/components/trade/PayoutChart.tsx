@@ -50,6 +50,8 @@ const DUMP_HEX = '#DC2626';
 const DUMP_FILL = 'rgba(220,38,38,0.4)';
 const BRAND_HEX = '#2563EB';
 
+// Compact form ("-$100", "$105K") for the DENSE axis + tooltip labels, where
+// space is tight and rounding is fine.
 function fmtCompactUsd(v: number): string {
   const abs = Math.abs(v);
   const sign = v < 0 ? '-' : '';
@@ -57,6 +59,21 @@ function fmtCompactUsd(v: number): string {
     return `${sign}$${(abs / 1000).toFixed(abs >= 10000 ? 0 : 1)}K`;
   }
   return `${sign}$${abs.toFixed(abs >= 10 ? 0 : 2)}`;
+}
+
+// Full-precision forms for the Max-loss / Break-even STAT TILES, matching
+// ConfirmTradeModal. The broker fee makes Max loss a $X.XX figure (e.g.
+// $100.10) that fmtCompactUsd would round to "-$100", and break-even a real
+// price ($105,499) that it would collapse to "$105K" — both misleading, so the
+// tiles get their own formatter while the axis keeps fmtCompactUsd.
+function fmtMaxLossUsd(betUsd: number): string {
+  return `-$${Math.abs(betUsd).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+function fmtBreakEvenUsd(v: number): string {
+  return `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
 export function PayoutChart({ market, numContracts, betUsd }: PayoutChartProps) {
@@ -175,13 +192,13 @@ export function PayoutChart({ market, numContracts, betUsd }: PayoutChartProps) 
       ? 'open-ended'
       : `+${fmtCompactUsd(stats.maxProfit)}`;
   const breakEvenLabel =
-    stats.breakEven == null ? '—' : fmtCompactUsd(stats.breakEven);
+    stats.breakEven == null ? '—' : fmtBreakEvenUsd(stats.breakEven);
 
   return (
     <div className="rounded-md border border-line bg-bg-subtle p-3">
       <div className="mb-2 grid grid-cols-3 gap-2">
         <Stat label="Max profit" value={maxProfitLabel} tone="pump" />
-        <Stat label="Max loss" value={`-${fmtCompactUsd(betUsd)}`} tone="dump" />
+        <Stat label="Max loss" value={fmtMaxLossUsd(betUsd)} tone="dump" />
         <Stat label="Break-even" value={breakEvenLabel} tone="neutral" />
       </div>
 
