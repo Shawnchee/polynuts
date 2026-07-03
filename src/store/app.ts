@@ -34,6 +34,14 @@ interface AppStore {
   activity: ActivityItem[];
   prices: { ETH?: number; BTC?: number };
   /**
+   * Wall-clock ms of the LAST price update per asset. Kept as a parallel map
+   * (rather than folding a timestamp into `prices`) so existing `prices.ETH`
+   * consumers stay bare numbers. Lets the UI render a "price stale" state when
+   * `Date.now() - pricesAt[asset]` grows large (a half-open feed socket that's
+   * stopped ticking) instead of showing a frozen quote as if it were live.
+   */
+  pricesAt: { ETH?: number; BTC?: number };
+  /**
    * True while the user is mid-trade (confirm modal open, approving, or the
    * fill is being signed/submitted). Order-book refetching is paused while
    * this is set so the markets list, featured hero, and selected market
@@ -65,6 +73,7 @@ export const useAppStore = create<AppStore>((set) => ({
   selectedMarketId: null,
   activity: [],
   prices: {},
+  pricesAt: {},
   tradeInProgress: false,
   feedbackOpen: false,
 
@@ -75,7 +84,10 @@ export const useAppStore = create<AppStore>((set) => ({
   prependActivity: (item) =>
     set((s) => ({ activity: [item, ...s.activity].slice(0, 50) })),
   setPrice: (asset, price) =>
-    set((s) => ({ prices: { ...s.prices, [asset]: price } })),
+    set((s) => ({
+      prices: { ...s.prices, [asset]: price },
+      pricesAt: { ...s.pricesAt, [asset]: Date.now() },
+    })),
   setTradeInProgress: (v) => set({ tradeInProgress: v }),
   setFeedbackOpen: (v) => set({ feedbackOpen: v }),
 }));

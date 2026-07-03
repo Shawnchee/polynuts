@@ -22,6 +22,14 @@ const HEARTBEAT_INTERVAL_S = 30; // server pings client every N seconds
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 const MAX_RECONNECT_ATTEMPTS = 10;
+// Receive-watchdog: with a 30s server heartbeat + ~1/s price ticks, a healthy
+// socket delivers SOMETHING well within 45s. A half-open socket (NAT/idle
+// timeout, dropped wifi, laptop sleep/wake) can stop delivering with NO `close`
+// event — so the close/online/visibility reconnect triggers never fire and the
+// feed silently freezes. We poll for staleness and force-close a dead socket,
+// which routes into the existing reconnect path.
+const WATCHDOG_INTERVAL_MS = 15_000;
+const STALE_THRESHOLD_MS = 45_000;
 
 export type Asset = 'ETH' | 'BTC';
 
@@ -37,8 +45,13 @@ export function startDeribitFeed(onPrice: PriceHandler): FeedHandle {
   let ws: WebSocket | null = null;
   let attempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let watchdogTimer: ReturnType<typeof setInterval> | null = null;
   let stopped = false;
   let nextRpcId = 1;
+  // Wall-clock of the last frame received on the current socket (any frame —
+  // price tick OR heartbeat). Reset on every (re)connect so a fresh socket
+  // isn't judged stale on its very first watchdog tick.
+  let lastMessageAt = Date.now();
 
   function connect() {
     if (stopped) return;
@@ -51,6 +64,7 @@ export function startDeribitFeed(onPrice: PriceHandler): FeedHandle {
 
     ws.addEventListener('open', () => {
       attempt = 0;
+      lastMessageAt = Date.now();
       // 1) subscribe to both indices in one frame
       ws?.send(
         JSON.stringify({
@@ -75,6 +89,8 @@ export function startDeribitFeed(onPrice: PriceHandler): FeedHandle {
     });
 
     ws.addEventListener('message', (ev) => {
+      // Any frame — price tick OR heartbeat — proves the socket is alive.
+      lastMessageAt = Date.now();
       let msg: unknown;
       try {
         msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '');
@@ -157,6 +173,21 @@ export function startDeribitFeed(onPrice: PriceHandler): FeedHandle {
   }
   window.addEventListener('online', onOnline);
 
+  // Receive-watchdog: force-close a socket that has gone quiet past the stale
+  // threshold. close → scheduleReconnect → connect, so a half-open socket that
+  // never emitted `close` still recovers. Runs continuously across reconnects;
+  // cleared on close(). Skips while a reconnect is already pending (no live ws).
+  watchdogTimer = setInterval(() => {
+    if (stopped || !ws) return;
+    if (Date.now() - lastMessageAt > STALE_THRESHOLD_MS) {
+      // Bump so we don't re-fire before the reconnected socket delivers a frame.
+      lastMessageAt = Date.now();
+      try {
+        ws.close();
+      } catch {}
+    }
+  }, WATCHDOG_INTERVAL_MS);
+
   connect();
 
   return {
@@ -166,6 +197,10 @@ export function startDeribitFeed(onPrice: PriceHandler): FeedHandle {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
+      }
+      if (watchdogTimer) {
+        clearInterval(watchdogTimer);
+        watchdogTimer = null;
       }
       try {
         ws?.close();
