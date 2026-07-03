@@ -16,8 +16,8 @@ vi.mock('@/lib/supabase/sync', () => ({
 import { NextRequest } from 'next/server';
 import { GET as indexerGET } from '@/app/api/indexer/[[...path]]/route';
 import { GET as orderbookGET } from '@/app/api/orderbook/[[...path]]/route';
-import { POST as tradesPOST } from '@/app/api/me/trades/route';
-import { writeFillToDb } from '@/lib/supabase/sync';
+import { GET as tradesGET, POST as tradesPOST } from '@/app/api/me/trades/route';
+import { writeFillToDb, syncSettlementsOnly, readUserTrades } from '@/lib/supabase/sync';
 import { resetRateLimit } from '@/lib/rate-limit';
 
 const ADDR = '0x' + 'a'.repeat(40);
@@ -153,5 +153,39 @@ describe('POST /api/me/trades market_label sanitization', () => {
     expect(written.market_label.length).toBeLessThanOrEqual(80);
     // No C0/DEL/C1 control characters survive.
     expect(written.market_label).not.toMatch(/[\u0000-\u001F\u007F-\u009F]/);
+  });
+});
+
+// -- ITEM 3: gate settlement-sync amplification on the GET -------------------
+describe('GET /api/me/trades settlement-sync gate', () => {
+  function getReq() {
+    const url = new URL('http://localhost/api/me/trades');
+    url.searchParams.set('address', ADDR);
+    return new NextRequest(url);
+  }
+
+  beforeEach(() => {
+    resetRateLimit();
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
+    vi.mocked(syncSettlementsOnly).mockClear();
+    vi.mocked(readUserTrades).mockReset();
+    vi.mocked(syncSettlementsOnly).mockResolvedValue({ settlementsUpserted: 0 });
+  });
+
+  it('skips the paid settlement sync when the address has no DB rows', async () => {
+    vi.mocked(readUserTrades).mockResolvedValue([]);
+    const res = await tradesGET(getReq() as never);
+    expect(res.status).toBe(200);
+    expect(syncSettlementsOnly).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.rows).toEqual([]);
+    expect(body.synced).toBeNull();
+  });
+
+  it('runs the settlement sync when the address already has rows', async () => {
+    vi.mocked(readUserTrades).mockResolvedValue([{ id: 1 }] as never);
+    const res = await tradesGET(getReq() as never);
+    expect(res.status).toBe(200);
+    expect(syncSettlementsOnly).toHaveBeenCalledOnce();
   });
 });

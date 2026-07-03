@@ -74,23 +74,35 @@ export async function GET(req: NextRequest) {
   }
 
   const sb = getSupabaseService();
-  const client = getSyncClient();
 
-  // Check the indexer ONLY for settlements on trades already in our DB.
-  // Never adds new trade rows — entries come exclusively from POST (write-on-fill).
-  let synced: { settlementsUpserted: number } | null = null;
-  let syncError: string | null = null;
-  try {
-    synced = await syncSettlementsOnly(sb, client, address);
-  } catch (e) {
-    syncError = (e as Error).message;
-  }
-
+  // Read the user's trades first — a cheap DB SELECT that doubles as an
+  // existence check. Entries only ever come from POST (write-on-fill), so an
+  // arbitrary ?address= with no rows must NOT be able to trigger the paid
+  // settlement sync (RPC + indexer) below — otherwise anyone could amplify our
+  // upstream cost against any wallet. syncSettlementsOnly never inserts new
+  // rows, so gating on existence can't hide a legit user's trades.
   let rows;
   try {
     rows = await readUserTrades(sb, address);
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  }
+
+  // Check the indexer ONLY for settlements on trades already in our DB, and only
+  // when the address actually has some. Re-read afterwards so any freshly-written
+  // settlements appear in this same response (skip the extra read when nothing
+  // changed).
+  let synced: { settlementsUpserted: number } | null = null;
+  let syncError: string | null = null;
+  if (rows.length > 0) {
+    try {
+      synced = await syncSettlementsOnly(sb, getSyncClient(), address);
+      if (synced.settlementsUpserted > 0) {
+        rows = await readUserTrades(sb, address);
+      }
+    } catch (e) {
+      syncError = (e as Error).message;
+    }
   }
 
   return NextResponse.json({ rows, synced, syncError });
