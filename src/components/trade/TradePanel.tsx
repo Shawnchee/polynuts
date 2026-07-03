@@ -212,23 +212,28 @@ export function TradePanel({
   const insufficientBalance = useMemo(() => {
     if (!balance) return false;
     try {
-      return Number(balance.formatted) < amount;
+      // The fill pulls premium + broker fee, so gate on the full out-of-pocket
+      // cost — otherwise a wallet holding exactly the stake passes here then
+      // reverts late at estimateGas ("transfer amount exceeds balance").
+      return Number(balance.formatted) < amount + feeUsd;
     } catch {
       return false;
     }
-  }, [balance, amount]);
+  }, [balance, amount, feeUsd]);
 
   // Whether the wallet has enough USDC pre-approved to skip the approval
-  // step. Compares allowance bigint to the bet's USDC amount in 6-dec.
+  // step. Compares allowance bigint to the bet's USDC amount + broker fee in
+  // 6-dec (the fill approves the broker for premium + fee, so gating on premium
+  // alone would let an exact-stake allowance pass then fail at fill).
   const needsApproval = useMemo(() => {
     if (!allowance) return true;
     try {
-      const required = toBigInt(String(amount), 6);
+      const required = toBigInt(String(amount), 6) + feeUsdc;
       return allowance < required;
     } catch {
       return true;
     }
-  }, [allowance, amount]);
+  }, [allowance, amount, feeUsdc]);
 
   // Amount-independent "is USDC usable for trading at all" signal — drives
   // the persistent allowance control so the user can approve proactively
