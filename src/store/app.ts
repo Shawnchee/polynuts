@@ -17,21 +17,11 @@ export type SortKey = 'volume' | 'newest' | 'soon' | 'payout';
  */
 export type ExpiryFilter = number | 'all';
 
-export interface ActivityItem {
-  id: string;
-  ts: number;
-  kind: 'created' | 'filled' | 'cancelled';
-  asset?: string;
-  direction?: 'PUMP' | 'DUMP' | 'RANGE';
-  question?: string;
-}
-
 interface AppStore {
   filter: FilterTab;
   sort: SortKey;
   expiryFilter: ExpiryFilter;
   selectedMarketId: string | null;
-  activity: ActivityItem[];
   prices: { ETH?: number; BTC?: number };
   /**
    * Wall-clock ms of the LAST price update per asset. Kept as a parallel map
@@ -60,7 +50,6 @@ interface AppStore {
   setSort: (s: SortKey) => void;
   setExpiryFilter: (e: ExpiryFilter) => void;
   selectMarket: (id: string | null) => void;
-  prependActivity: (item: ActivityItem) => void;
   setPrice: (asset: 'ETH' | 'BTC', price: number) => void;
   setTradeInProgress: (v: boolean) => void;
   setFeedbackOpen: (v: boolean) => void;
@@ -71,7 +60,6 @@ export const useAppStore = create<AppStore>((set) => ({
   sort: 'soon',
   expiryFilter: 'all',
   selectedMarketId: null,
-  activity: [],
   prices: {},
   pricesAt: {},
   tradeInProgress: false,
@@ -81,8 +69,6 @@ export const useAppStore = create<AppStore>((set) => ({
   setSort: (s) => set({ sort: s }),
   setExpiryFilter: (e) => set({ expiryFilter: e }),
   selectMarket: (id) => set({ selectedMarketId: id }),
-  prependActivity: (item) =>
-    set((s) => ({ activity: [item, ...s.activity].slice(0, 50) })),
   setPrice: (asset, price) =>
     set((s) => ({
       prices: { ...s.prices, [asset]: price },
