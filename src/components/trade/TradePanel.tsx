@@ -470,6 +470,14 @@ export function TradePanel({
           usdcAmount,
           ethers.ZeroAddress
         );
+        // Re-check the maker order's expiry immediately before we ask the wallet
+        // to estimate gas. The broker path builds+sends raw calldata (not the
+        // SDK's fillOrder), so nothing else revalidates the quote here — a maker
+        // order that expired while the confirm modal was open would otherwise
+        // only fail deep in estimateGas as an opaque ethers CALL_EXCEPTION.
+        // Throwing OrderExpiredError routes it through the stale-quote recovery
+        // in the catch below (refresh the book, ask the user to retry).
+        validateOrderExpiry(Number(trade.market.order.order.expiry));
         const gas = await signer.estimateGas({ to: PARTNER_BROKER_ADDRESS, data });
         const tx = await signer.sendTransaction({
           to: PARTNER_BROKER_ADDRESS,
@@ -641,7 +649,22 @@ export function TradePanel({
       // settlement race, deadline, math/overflow) — a refresh won't fix those,
       // so it keeps its specific reason in the chain below instead of inviting a
       // futile retry loop.
-      if (err instanceof OrderExpiredError || err instanceof SlippageExceededError) {
+      // On the broker path the fill is a raw estimateGas/sendTransaction rather
+      // than the SDK's fillOrder, so a dead/taken maker order surfaces as an
+      // ethers CALL_EXCEPTION ("missing revert data") — NOT an SDK
+      // OrderExpiredError/SlippageExceededError. Treat that as the same
+      // recoverable stale-quote class so the user gets a book refresh + retry
+      // prompt instead of a dead-end "transaction failed".
+      const isBrokerCallException =
+        !!PARTNER_BROKER_ADDRESS &&
+        typeof err === 'object' &&
+        err !== null &&
+        (err as { code?: unknown }).code === 'CALL_EXCEPTION';
+      if (
+        err instanceof OrderExpiredError ||
+        err instanceof SlippageExceededError ||
+        isBrokerCallException
+      ) {
         void queryClient.invalidateQueries({ queryKey: ['orders'] });
         toast.error('Quotes updated — review your bet and try again.', {
           id: t,
