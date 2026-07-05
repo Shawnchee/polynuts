@@ -172,14 +172,19 @@ a:focus-visible,
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
 }
 
-/* Reduced motion users get instant transitions */
+/* Reduced motion users get instant transitions. Delays are zeroed too so
+   `both`-fill entrance animations (reel-mask-line, reel-rise) don't hold
+   content invisible through their stagger delay — everything lands in its
+   final state immediately. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
 }
@@ -320,6 +325,54 @@ a:focus-visible,
     background: linear-gradient(to right, transparent, rgba(148, 163, 184, 0.22), transparent);
   }
 
+  /* ── Studio-reel motion kit (marketing surfaces; see reel.tsx) ──────────
+     One easing curve for every entrance: cubic-bezier(0.16, 1, 0.3, 1).
+     `both` fill keeps content hidden through its stagger delay, then holds
+     the end state. The reduced-motion block above collapses all of these to
+     their final frame instantly. */
+
+  /* Headline line swinging up out of an overflow-hidden mask */
+  .reel-mask-line {
+    transform-origin: 0% 100%;
+    animation: reel-mask-line 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Load-time rise for above-the-fold content (CSS-only, no IO needed) */
+  .reel-rise {
+    animation: reel-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Scroll-time reveal — hidden until reel.tsx's FadeIn adds .reel-in.
+     If scripting is off the observer never runs, so show content as-is. */
+  .reel-fade {
+    opacity: 0;
+    transform: translateY(24px);
+    transition:
+      opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reel-fade.reel-in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @media (scripting: none) {
+    .reel-fade {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Hero scroll cue — ambient loop, so easeInOut is correct here */
+  .reel-cue {
+    animation: reel-cue 1.8s ease-in-out infinite;
+  }
+
+  /* Inverted selection on marketing surfaces — accent bg, canvas text */
+  .landing-page ::selection {
+    background: #60a5fa;
+    color: #131720;
+  }
+
   /* Stagger delay helpers for grid entrance */
   .stagger-1 { animation-delay: 30ms; }
   .stagger-2 { animation-delay: 60ms; }
@@ -329,4 +382,36 @@ a:focus-visible,
   .stagger-6 { animation-delay: 180ms; }
   .stagger-7 { animation-delay: 210ms; }
   .stagger-8 { animation-delay: 240ms; }
+}
+
+/* Keyframes for the studio-reel kit (declared top-level so they survive
+   layer pruning regardless of which utility references them). */
+@keyframes reel-mask-line {
+  from {
+    transform: translateY(112%) rotate(5deg);
+  }
+  to {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+@keyframes reel-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes reel-cue {
+  0%,
+  100% {
+    transform: scaleY(0.2);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }

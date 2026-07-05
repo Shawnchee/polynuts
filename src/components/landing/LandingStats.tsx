@@ -82,7 +82,7 @@ export function LandingStats() {
           caption (not a flush top-border header), and the grid is a self-
           contained card — so the whole group sits with equal air top + bottom
           instead of being top-heavy from a header with nothing under it. */}
-      <div className="mx-auto max-w-6xl px-6 py-12">
+      <div className="mx-auto w-full max-w-page px-6 py-12 sm:px-10 lg:px-16">
         {/* Honest framing: these are the underlying Thetanuts V4 OptionBook
             numbers — the liquidity Polynuts is a frontend for — not Polynuts'
             own user traction. Labelled accordingly so nothing overclaims. */}

@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { PixelIcon } from '@/components/landing/PixelIcon';
+import { FadeIn, MaskedLine } from '@/components/landing/reel';
 import { WaitlistForm } from '@/components/waitlist/WaitlistForm';
 
 const ACCENT = '#60a5fa';
@@ -152,32 +153,49 @@ export default function WaitlistPage() {
         <div className="relative z-10 mx-auto grid w-full max-w-5xl items-center gap-14 lg:grid-cols-[1.1fr_0.9fr]">
           {/* Copy + form — left-aligned, asymmetric (no centered-everything). */}
           <div className="flex flex-col items-start gap-7 text-left">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-white/55">
+            <div
+              className="reel-rise inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-white/55"
+              style={{ animationDelay: '0.1s' }}
+            >
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
               The Polymarket of crypto options
             </div>
 
             <h1 className="font-display text-[clamp(2.4rem,6vw,4rem)] font-extrabold leading-[0.98] tracking-[-0.03em]">
-              Bet the moment.
-              <span className="mt-1 block" style={{ color: ACCENT }}>
-                Get in early.
-              </span>
+              <MaskedLine delay={0.25}>
+                Bet the{' '}
+                <span className="font-serif italic font-normal tracking-[-0.01em]" style={{ color: ACCENT }}>
+                  moment
+                </span>
+                .
+              </MaskedLine>
+              <MaskedLine delay={0.36}>Get in early.</MaskedLine>
             </h1>
 
-            <p className="max-w-md text-base leading-relaxed text-white/55 sm:text-lg">
+            <p
+              className="reel-rise max-w-md text-base leading-relaxed text-white/55 sm:text-lg"
+              style={{ animationDelay: '0.7s' }}
+            >
               Like Polymarket — but for options. Bet whether BTC or ETH will
               pump, dump, or range: fixed risk, automatic on-chain settlement at
               expiry, no custody. Join the waitlist and we&apos;ll email you the second
               it&apos;s live.
             </p>
 
-            <div id="join" className="w-full max-w-md scroll-mt-28">
+            <div
+              id="join"
+              className="reel-rise w-full max-w-md scroll-mt-28"
+              style={{ animationDelay: '0.8s' }}
+            >
               <WaitlistForm />
             </div>
           </div>
 
           {/* Perks rail — echoes the landing's hairline-divided card system. */}
-          <div className="grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.07]">
+          <div
+            className="reel-rise grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.07]"
+            style={{ animationDelay: '0.35s' }}
+          >
             {PERKS.map((p) => (
               <div key={p.title} className="flex items-start gap-4 bg-[#131720] p-6">
                 <PixelIcon name={p.icon} className="mt-0.5 h-7 w-7 shrink-0" style={{ color: ACCENT }} />
@@ -194,63 +212,75 @@ export default function WaitlistPage() {
       {/* ── Teaser: a peek inside the live product ── */}
       <section className="relative border-t border-white/[0.06] px-6 py-24">
         <div className="mx-auto max-w-5xl">
-          <div className="mb-12 max-w-xl">
-            <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
-              A peek inside
+          <FadeIn className="mb-12 max-w-xl">
+            <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em]" style={{ color: ACCENT }}>
+              01 — A peek inside
             </p>
             <h2 className="font-display text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-5xl">
               The product is built.
               <br />
-              You&apos;re early to the door.
+              You&apos;re{' '}
+              <span className="font-serif italic font-normal tracking-[-0.01em]" style={{ color: ACCENT }}>
+                early
+              </span>{' '}
+              to the door.
             </h2>
             <p className="mt-4 max-w-md text-base leading-relaxed text-white/50">
               Real markets, real on-chain settlement — running on Base right now.
               The waitlist just gets you in first.
             </p>
-          </div>
+          </FadeIn>
 
           {/* Featured shot — the markets surface. */}
-          <BrowserFrame
-            src="/teasers/markets.png"
-            alt="Polynuts markets page — a grid of live BTC and ETH options with real-time odds and a live on-chain fills feed"
-            url="polynuts.xyz/markets"
-            caption="Live markets — 240+ BTC & ETH options, real-time odds, on-chain fills"
-            priority
-            sizes="(max-width: 1024px) 100vw, 1024px"
-          />
+          <FadeIn>
+            <BrowserFrame
+              src="/teasers/markets.png"
+              alt="Polynuts markets page — a grid of live BTC and ETH options with real-time odds and a live on-chain fills feed"
+              url="polynuts.xyz/markets"
+              caption="Live markets — 240+ BTC & ETH options, real-time odds, on-chain fills"
+              priority
+              sizes="(max-width: 1024px) 100vw, 1024px"
+            />
+          </FadeIn>
 
           {/* Two-up — the bet ticket + the leaderboard. */}
           <div className="mt-6 grid gap-6 sm:grid-cols-2">
-            <BrowserFrame
-              src="/teasers/trade.png"
-              alt="Polynuts bet ticket — choose a stake and see your exact USDC payout and implied probability"
-              url="polynuts.xyz/markets"
-              caption="One-tap bets — pick a stake, see your exact payout"
-              sizes="(max-width: 640px) 100vw, 512px"
-            />
-            <BrowserFrame
-              src="/teasers/leaderboard.png"
-              alt="Polynuts leaderboard — recent trades and per-trader rankings by realized PnL"
-              url="polynuts.xyz/leaderboard"
-              caption="On-chain leaderboard — every fill, ranked by PnL"
-              sizes="(max-width: 640px) 100vw, 512px"
-            />
+            <FadeIn delay={0.06}>
+              <BrowserFrame
+                src="/teasers/trade.png"
+                alt="Polynuts bet ticket — choose a stake and see your exact USDC payout and implied probability"
+                url="polynuts.xyz/markets"
+                caption="One-tap bets — pick a stake, see your exact payout"
+                sizes="(max-width: 640px) 100vw, 512px"
+              />
+            </FadeIn>
+            <FadeIn delay={0.12}>
+              <BrowserFrame
+                src="/teasers/leaderboard.png"
+                alt="Polynuts leaderboard — recent trades and per-trader rankings by realized PnL"
+                url="polynuts.xyz/leaderboard"
+                caption="On-chain leaderboard — every fill, ranked by PnL"
+                sizes="(max-width: 640px) 100vw, 512px"
+              />
+            </FadeIn>
           </div>
 
           {/* Closing CTA back up to the form. */}
-          <div className="mt-14 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="font-display text-xl font-bold text-white">
-              Want in before everyone else?
-            </p>
-            <a
-              href="#join"
-              className="group press-scale inline-flex items-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-[#131720] transition-all hover:brightness-110"
-              style={{ background: ACCENT }}
-            >
-              Join the waitlist
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </a>
-          </div>
+          <FadeIn>
+            <div className="mt-14 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="font-display text-xl font-bold text-white">
+                Want in before everyone else?
+              </p>
+              <a
+                href="#join"
+                className="group press-scale inline-flex items-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-[#131720] transition-all hover:brightness-110"
+                style={{ background: ACCENT }}
+              >
+                Join the waitlist
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </a>
+            </div>
+          </FadeIn>
         </div>
       </section>
 

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
+import { ACCENT, FadeIn, GhostWord } from '@/components/landing/reel';
 import { TokenIcon } from '@/components/ui/TokenIcon';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { useMarkets } from '@/lib/sdk/useOrders';
@@ -98,17 +99,26 @@ export function LiveMarkets() {
   }
 
   return (
-    <section className="relative px-6 py-24">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <div>
-            <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.22em] text-white/35">
-              Live order book
+    <section aria-label="Live order book" className="relative overflow-hidden">
+      <GhostWord range={-110} className="right-[-2vw] top-16 text-[17vw]">
+        02
+      </GhostWord>
+      <div className="relative mx-auto w-full max-w-page px-6 py-28 sm:px-10 md:py-40 lg:px-16">
+        <div className="mb-12 flex items-end justify-between gap-4">
+          <FadeIn>
+            <p
+              className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em]"
+              style={{ color: ACCENT }}
+            >
+              02 — Live order book
             </p>
-            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
-              Trade these right now
+            <h2 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
+              Trade these{' '}
+              <span className="font-serif italic font-normal tracking-[-0.01em]" style={{ color: ACCENT }}>
+                right now
+              </span>
             </h2>
-          </div>
+          </FadeIn>
           <Link
             href="/markets"
             className="group hidden shrink-0 items-center gap-1.5 font-mono text-xs text-white/55 transition-colors hover:text-white sm:flex"
@@ -118,6 +128,7 @@ export function LiveMarkets() {
           </Link>
         </div>
 
+        <FadeIn delay={0.1}>
         <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]">
           <HeaderRow />
 
@@ -170,6 +181,7 @@ export function LiveMarkets() {
             );
           })}
         </div>
+        </FadeIn>
 
         <Link
           href="/markets"

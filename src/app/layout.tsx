@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { Inter, JetBrains_Mono, Bricolage_Grotesque } from 'next/font/google';
+import { Inter, JetBrains_Mono, Bricolage_Grotesque, Instrument_Serif } from 'next/font/google';
 import { Providers } from './providers';
 import { NavProgress } from '@/components/nav/NavProgress';
 import { Analytics } from '@vercel/analytics/next';
@@ -28,6 +28,16 @@ const jetbrains = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-jetbrains',
   weight: ['400', '500', '700'],
+  display: 'swap',
+});
+
+// Serif accent face — exactly one italic word per marketing headline (the
+// studio-reel signature move). Italic 400 only, so the payload stays tiny.
+const instrument = Instrument_Serif({
+  subsets: ['latin'],
+  variable: '--font-instrument',
+  weight: '400',
+  style: 'italic',
   display: 'swap',
 });
 
@@ -87,7 +97,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrains.variable} ${bricolage.variable}`}
+      className={`${inter.variable} ${jetbrains.variable} ${bricolage.variable} ${instrument.variable}`}
       suppressHydrationWarning
     >
       <head>

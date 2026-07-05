@@ -75,6 +75,8 @@ const config: Config = {
           'system-ui',
           'sans-serif',
         ],
+        // Serif accent — one italic word per marketing headline, never more.
+        serif: ['var(--font-instrument)', 'Georgia', 'serif'],
       },
       fontSize: {
         xs: ['10px', { lineHeight: '14px', letterSpacing: '0.6px' }],
