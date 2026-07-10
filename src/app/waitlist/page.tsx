@@ -134,8 +134,8 @@ export default function WaitlistPage() {
     <div className="landing-page relative min-h-screen overflow-x-hidden bg-[#131720] text-white antialiased">
       {/* ── Top bar — wordmark only; no app links on the pre-launch front door ── */}
       <header className="fixed top-0 z-50 w-full border-b border-white/[0.06] bg-[#131720]/70 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3.5">
-          <Link href="/" className="font-display text-lg font-extrabold tracking-tight">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-10 2xl:max-w-[88rem]">
+          <Link href="/" className="font-display text-lg font-extrabold tracking-tight sm:text-xl">
             <span style={{ color: ACCENT }}>poly</span>
             <span className="text-white">nuts</span>
           </Link>
@@ -147,12 +147,12 @@ export default function WaitlistPage() {
       </header>
 
       {/* ── Hero ── */}
-      <section className="relative flex min-h-[100svh] items-center overflow-hidden px-6 pb-20 pt-28">
+      <section className="relative flex min-h-[100svh] items-center overflow-hidden px-6 pb-20 pt-28 lg:px-10">
         <Backdrop />
 
-        <div className="relative z-10 mx-auto grid w-full max-w-5xl items-center gap-14 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="relative z-10 mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[1.15fr_0.85fr] lg:gap-20 2xl:max-w-[88rem]">
           {/* Copy + form — left-aligned, asymmetric (no centered-everything). */}
-          <div className="flex flex-col items-start gap-7 text-left">
+          <div className="flex flex-col items-start gap-7 text-left lg:gap-8">
             <div
               className="reel-rise inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-white/55"
               style={{ animationDelay: '0.1s' }}
@@ -161,7 +161,7 @@ export default function WaitlistPage() {
               The Polymarket of crypto options
             </div>
 
-            <h1 className="font-display text-[clamp(2.4rem,6vw,4rem)] font-extrabold leading-[0.98] tracking-[-0.03em]">
+            <h1 className="font-display text-[clamp(2.8rem,6.5vw,5.25rem)] font-extrabold leading-[0.96] tracking-[-0.03em]">
               <MaskedLine delay={0.25}>
                 Bet the{' '}
                 <span className="font-serif italic font-normal tracking-[-0.01em]" style={{ color: ACCENT }}>
@@ -173,7 +173,7 @@ export default function WaitlistPage() {
             </h1>
 
             <p
-              className="reel-rise max-w-md text-base leading-relaxed text-white/55 sm:text-lg"
+              className="reel-rise max-w-xl text-lg leading-relaxed text-white/55 sm:text-xl"
               style={{ animationDelay: '0.7s' }}
             >
               Like Polymarket — but for options. Bet whether BTC or ETH will
@@ -184,7 +184,7 @@ export default function WaitlistPage() {
 
             <div
               id="join"
-              className="reel-rise w-full max-w-md scroll-mt-28"
+              className="reel-rise w-full max-w-xl scroll-mt-28"
               style={{ animationDelay: '0.8s' }}
             >
               <WaitlistForm />
@@ -197,11 +197,11 @@ export default function WaitlistPage() {
             style={{ animationDelay: '0.35s' }}
           >
             {PERKS.map((p) => (
-              <div key={p.title} className="flex items-start gap-4 bg-[#131720] p-6">
-                <PixelIcon name={p.icon} className="mt-0.5 h-7 w-7 shrink-0" style={{ color: ACCENT }} />
+              <div key={p.title} className="flex items-start gap-4 bg-[#131720] p-7 lg:p-8">
+                <PixelIcon name={p.icon} className="mt-0.5 h-8 w-8 shrink-0" style={{ color: ACCENT }} />
                 <div>
-                  <h3 className="font-display text-base font-bold text-white">{p.title}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-white/45">{p.body}</p>
+                  <h3 className="font-display text-lg font-bold text-white">{p.title}</h3>
+                  <p className="mt-1.5 text-base leading-relaxed text-white/45">{p.body}</p>
                 </div>
               </div>
             ))}
@@ -210,13 +210,13 @@ export default function WaitlistPage() {
       </section>
 
       {/* ── Teaser: a peek inside the live product ── */}
-      <section className="relative border-t border-white/[0.06] px-6 py-24">
-        <div className="mx-auto max-w-5xl">
-          <FadeIn className="mb-12 max-w-xl">
-            <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.22em]" style={{ color: ACCENT }}>
+      <section className="relative border-t border-white/[0.06] px-6 py-24 lg:px-10">
+        <div className="mx-auto max-w-7xl 2xl:max-w-[88rem]">
+          <FadeIn className="mb-12 max-w-2xl">
+            <p className="mb-4 font-mono text-xs uppercase tracking-[0.22em]" style={{ color: ACCENT }}>
               01 — A peek inside
             </p>
-            <h2 className="font-display text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-5xl">
+            <h2 className="font-display text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl">
               The product is built.
               <br />
               You&apos;re{' '}
@@ -225,7 +225,7 @@ export default function WaitlistPage() {
               </span>{' '}
               to the door.
             </h2>
-            <p className="mt-4 max-w-md text-base leading-relaxed text-white/50">
+            <p className="mt-5 max-w-lg text-lg leading-relaxed text-white/50">
               Real markets, real on-chain settlement — running on Base right now.
               The waitlist just gets you in first.
             </p>
@@ -239,7 +239,7 @@ export default function WaitlistPage() {
               url="polynuts.xyz/markets"
               caption="Live markets — 240+ BTC & ETH options, real-time odds, on-chain fills"
               priority
-              sizes="(max-width: 1024px) 100vw, 1024px"
+              sizes="(max-width: 1280px) 100vw, 1280px"
             />
           </FadeIn>
 
@@ -251,7 +251,7 @@ export default function WaitlistPage() {
                 alt="Polynuts bet ticket — choose a stake and see your exact USDC payout and implied probability"
                 url="polynuts.xyz/markets"
                 caption="One-tap bets — pick a stake, see your exact payout"
-                sizes="(max-width: 640px) 100vw, 512px"
+                sizes="(max-width: 640px) 100vw, 640px"
               />
             </FadeIn>
             <FadeIn delay={0.12}>
@@ -260,7 +260,7 @@ export default function WaitlistPage() {
                 alt="Polynuts leaderboard — recent trades and per-trader rankings by realized PnL"
                 url="polynuts.xyz/leaderboard"
                 caption="On-chain leaderboard — every fill, ranked by PnL"
-                sizes="(max-width: 640px) 100vw, 512px"
+                sizes="(max-width: 640px) 100vw, 640px"
               />
             </FadeIn>
           </div>
@@ -268,7 +268,7 @@ export default function WaitlistPage() {
           {/* Closing CTA back up to the form. */}
           <FadeIn>
             <div className="mt-14 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="font-display text-xl font-bold text-white">
+              <p className="font-display text-2xl font-bold text-white sm:text-3xl">
                 Want in before everyone else?
               </p>
               <a
@@ -285,8 +285,8 @@ export default function WaitlistPage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer className="relative z-10 border-t border-white/[0.06] px-6 py-10">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 text-xs text-white/30">
+      <footer className="relative z-10 border-t border-white/[0.06] px-6 py-10 lg:px-10">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 text-xs text-white/30 2xl:max-w-[88rem]">
           <span className="font-mono">
             <span style={{ color: ACCENT }}>poly</span>nuts — powered by Thetanuts V4
           </span>

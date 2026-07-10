@@ -165,12 +165,12 @@ export function WaitlistForm() {
           placeholder="you@email.com"
           aria-label="Email address"
           aria-invalid={!!error}
-          className="min-w-0 flex-1 rounded-full border border-white/10 bg-white/[0.04] px-5 py-3.5 text-base text-white placeholder:text-white/30 transition-colors focus:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#60a5fa]/40"
+          className="min-w-0 flex-1 rounded-full border border-white/10 bg-white/[0.04] px-6 py-4 text-base text-white placeholder:text-white/30 transition-colors focus:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#60a5fa]/40 sm:text-lg"
         />
         <button
           type="submit"
           disabled={!valid || pending}
-          className="group press-scale flex items-center justify-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-[#131720] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          className="group press-scale flex items-center justify-center gap-2 rounded-full px-8 py-4 text-base font-semibold text-[#131720] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 sm:text-lg"
           style={{ background: ACCENT }}
         >
           {pending ? 'Joining…' : 'Join waitlist'}
