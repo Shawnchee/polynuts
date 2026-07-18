@@ -134,17 +134,58 @@ export default function MarketsPage() {
   // (client.utils.fromUsdcDecimals + client.option.simulatePayout); the
   // composite score formula is product-taxonomy, not a payout calculation.
   const client = getReadClient();
-  const featured = useMemo(() => {
-    if (filtered.length < FEATURED_MIN) return [];
-    const ranked = [...filtered]
+
+  // Signature of the featured INPUT that should trigger a re-rank: the market
+  // SET plus whether each market has a resolved multiplier yet. It intentionally
+  // excludes the multiplier VALUE and availableUsdc, both of which tick every
+  // 30s poll. `multiplierByMarket.has(id)` only flips false->true once (on first
+  // resolve; keepPreviousData holds it thereafter), so a value tick never changes
+  // the signature — but a new listing, an expiry, a filter/expiry-scope change,
+  // or a first multiplier resolve all do.
+  const featuredSig = useMemo(() => {
+    if (filtered.length < FEATURED_MIN) return '';
+    return filtered
+      .map((m) => `${m.id}:${multiplierByMarket.has(m.id) ? 1 : 0}`)
+      .sort()
+      .join('|');
+  }, [filtered, multiplierByMarket]);
+
+  // Frozen ranked membership: recompute the top-N featured id list ONLY when
+  // featuredSig changes (market set / first-multiplier-resolve), never on a
+  // pure value tick — that boundary re-ranking was reshuffling `rest` and the
+  // page-1 slice. Keyed on featuredSig alone; filtered/multiplierByMarket are
+  // read for their latest values by design, so an unchanged signature reuses
+  // the previous list (no cross-render ref needed).
+  const featuredIdList = useMemo(() => {
+    if (filtered.length < FEATURED_MIN) return [] as string[];
+    return [...filtered]
       .map((m) => {
         const vol = Number(client.utils.fromUsdcDecimals(m.availableUsdc));
         const mult = multiplierByMarket.get(m.id) ?? 0;
-        return { m, score: vol * Math.max(1, Math.min(10, mult)) };
+        return { id: m.id, score: vol * Math.max(1, Math.min(10, mult)) };
       })
-      .sort((a, b) => b.score - a.score);
-    return ranked.slice(0, FEATURED_COUNT).map((r) => r.m);
-  }, [filtered, multiplierByMarket, client]);
+      // Final id tiebreak so an exact score tie ranks deterministically
+      // between recomputes.
+      .sort((a, b) =>
+        b.score !== a.score ? b.score - a.score : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+      )
+      .slice(0, FEATURED_COUNT)
+      .map((r) => r.id);
+    // Keyed on featuredSig only, on purpose: re-ranking on every value tick is
+    // exactly the churn being fixed. featuredSig already changes whenever the
+    // market set or a first-multiplier-resolve changes — i.e. when we must
+    // re-rank — so reading the latest filtered/multiplier here is intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featuredSig]);
+
+  // Resolve the frozen ids back to CURRENT market objects so displayed values
+  // stay live; only membership + order are frozen between signature changes.
+  const featured = useMemo(() => {
+    const byId = new Map(filtered.map((m) => [m.id, m] as const));
+    return featuredIdList
+      .map((id) => byId.get(id))
+      .filter((m): m is MarketView => m != null);
+  }, [filtered, featuredIdList]);
 
   const featuredIds = useMemo(
     () => new Set(featured.map((m) => m.id)),
