@@ -216,6 +216,21 @@ export default function MarketsPage() {
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const pageRows = rest.slice(pageStart, pageStart + PAGE_SIZE);
 
+  // Entrance animation plays only on the list's FIRST paint. After the initial
+  // stagger completes, later polls must not restage the grid: a card that
+  // legitimately enters just appears, and a market oscillating across the page
+  // boundary can't strobe. SSR-safe — starts false on server AND client (so the
+  // rendered class string matches during hydration), flips only client-side.
+  const listReady = !isLoading && pageRows.length > 0;
+  const [entranceDone, setEntranceDone] = useState(false);
+  useEffect(() => {
+    if (!listReady || entranceDone) return;
+    // 240ms max stagger + 280ms fade = 520ms; wait past it so the initial
+    // animation finishes before we stop applying the classes.
+    const id = setTimeout(() => setEntranceDone(true), 600);
+    return () => clearTimeout(id);
+  }, [listReady, entranceDone]);
+
   const selectedMarket =
     filtered.find((m) => m.id === selectedId) ??
     markets.find((m) => m.id === selectedId) ??
@@ -275,8 +290,8 @@ export default function MarketsPage() {
                     <div
                       key={m.id}
                       className={cn(
-                        'animate-fade-in',
-                        i < 8 && `stagger-${(i % 8) + 1}`
+                        !entranceDone && 'animate-fade-in',
+                        !entranceDone && i < 8 && `stagger-${(i % 8) + 1}`
                       )}
                     >
                       <MarketCard
