@@ -27,14 +27,23 @@ export function TopNav({ active = '/' }: { active?: string }) {
     <header className="sticky top-0 z-30 glass border-b border-line">
       <div className="mx-auto flex h-14 max-w-page items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-6 lg:gap-8">
-          <Link
-            href="/"
-            aria-label="Polynuts home"
-            className="font-display flex cursor-pointer select-none items-center text-md font-bold tracking-tight transition-opacity hover:opacity-90"
-          >
-            <span className="text-brand">poly</span>
-            <span className="text-text">nuts</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              aria-label="Polynuts home"
+              className="font-display flex cursor-pointer select-none items-center text-md font-bold tracking-tight transition-opacity hover:opacity-90"
+            >
+              <span className="text-brand">poly</span>
+              <span className="text-text">nuts</span>
+            </Link>
+            {/* Permanent public-beta marker — sits by the wordmark on every app page. */}
+            <span
+              title="Polynuts is in public beta"
+              className="select-none rounded-full border border-line bg-surface px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-dim"
+            >
+              Beta
+            </span>
+          </div>
           <nav aria-label="Primary" className="hidden items-center gap-1 sm:flex">
             {tabs.map((t) => {
               const isActive = active === t.href;

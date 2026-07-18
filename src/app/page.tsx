@@ -396,8 +396,13 @@ export default function LandingPage() {
       {/* ── Footer ── */}
       <footer className="border-t border-white/[0.06]">
         <div className={`${CONTAINER} flex flex-wrap items-center justify-between gap-4 py-10 text-xs text-white/30`}>
-          <span className="font-mono">
-            <span style={{ color: ACCENT }}>poly</span>nuts — powered by Thetanuts V4
+          <span className="flex items-center gap-2.5 font-mono">
+            <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-white/45">
+              Public Beta
+            </span>
+            <span>
+              <span style={{ color: ACCENT }}>poly</span>nuts — powered by Thetanuts V4
+            </span>
           </span>
           <div className="flex gap-6 font-mono">
             <Link href="/markets" className="transition-colors hover:text-white/70">Markets</Link>
