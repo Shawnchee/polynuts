@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, after, type NextRequest } from 'next/server';
 import {
   getSupabaseService,
   hasSupabaseConfig,
@@ -90,24 +90,28 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'internal error' }, { status: 500 });
   }
 
-  // Check the indexer ONLY for settlements on trades already in our DB, and only
-  // when the address actually has some. Re-read afterwards so any freshly-written
-  // settlements appear in this same response (skip the extra read when nothing
-  // changed).
-  let synced: { settlementsUpserted: number } | null = null;
-  let syncError: string | null = null;
+  // Settlement sync fires two Thetanuts indexer calls (~2s on the free-tier
+  // RPC). Running it inline made every portfolio load block ~2.5s even though
+  // the DB rows above are ready in milliseconds. Defer it to run AFTER the
+  // response is sent — Vercel keeps the function alive for after() — so the
+  // table paints immediately from the DB. Any settlements it writes surface on
+  // the client's next poll (refetchInterval 30s) or next visit, rather than
+  // gating this response.
+  //
+  // Still gated on rows.length so an arbitrary ?address= with no trades can't
+  // trigger the paid indexer scan (same cost-abuse guard as before). The
+  // settlement upsert is idempotent, so a redundant deferred run is harmless.
   if (rows.length > 0) {
-    try {
-      synced = await syncSettlementsOnly(sb, getSyncClient(), address);
-      if (synced.settlementsUpserted > 0) {
-        rows = await readUserTrades(sb, address);
+    after(async () => {
+      try {
+        await syncSettlementsOnly(sb, getSyncClient(), address);
+      } catch (e) {
+        console.warn('[me/trades] deferred settlement sync failed', e);
       }
-    } catch (e) {
-      syncError = (e as Error).message;
-    }
+    });
   }
 
-  return NextResponse.json({ rows, synced, syncError });
+  return NextResponse.json({ rows });
 }
 
 // ─── POST: write a single fill to Supabase immediately after fillOrder ───────
