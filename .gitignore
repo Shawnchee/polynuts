@@ -20,3 +20,4 @@ tsconfig.tsbuildinfo
 
 # Private operator notes (not for repo)
 my_side.md
+.env*
