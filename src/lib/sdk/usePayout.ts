@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useQuery, useQueries, keepPreviousData } from '@tanstack/react-query';
 import { getReadClient, PARTNER_BROKER_ADDRESS } from './clients';
 import { getPartnerBrokerFeeBps } from './partnerBroker';
 import { getProbePrices, type MarketView } from './markets';
@@ -108,6 +108,10 @@ export function useMarketBinaryFraming(market: MarketView | null) {
       return { maxPayoutPerUnit: maxPayout, multiplier, yesProbability };
     },
     enabled,
+    // Hold the last multiplier while a fresh pricePerContract key
+    // refetches, instead of blanking to undefined (pricePerContract is
+    // part of the queryKey, so each price tick is a fresh cache miss).
+    placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: 30 * 60_000,
   });
@@ -174,6 +178,7 @@ export function useMarketBinaryFramings(markets: MarketView[]) {
         return { maxPayoutPerUnit: maxPayout, multiplier, yesProbability };
       },
       enabled: m.family !== 'vanilla',
+      placeholderData: keepPreviousData,
       staleTime: Infinity,
       gcTime: 30 * 60_000,
     })),
