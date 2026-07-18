@@ -334,8 +334,17 @@ export function buildMarketView(
   const structureName = getStructureLabel(implInfo.name);
   const family = familyFromImpl(implInfo.name);
 
-  const sigSuffix = order.signature.slice(-12);
-  const id = `${order.order.maker}-${order.order.nonce.toString()}-${sigSuffix}`;
+  // Stable, content-derived market id built ONLY from immutable logical
+  // fields (maker, implementation contract, direction, strikes, expiry).
+  // NEVER from the order signature/nonce, which the indexer rotates
+  // ~every minute even though the market is unchanged — that rotation
+  // re-keyed every React card on each 30s poll and forced a full grid
+  // remount + entrance-animation replay. Use raw.implementation (the
+  // contract address, not implInfo.name) so per-collateral contract
+  // variants stay distinct; include isLong so a two-sided quote on the
+  // same structure can't collide. strikesAsc is a canonical ascending
+  // sort, so the id is independent of the order strikes are returned in.
+  const id = `${order.order.maker.toLowerCase()}-${raw.implementation.toLowerCase()}-${raw.isLong ? 'L' : 'S'}-${strikesAsc.map(String).join('_')}-${expirySec}`;
 
   let availableUsdc = 0n;
   try {

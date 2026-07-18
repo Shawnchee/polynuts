@@ -39,10 +39,22 @@ export function useMarkets(): {
   const markets = useMemo(() => {
     if (!orders) return [];
     const now = Math.floor(Date.now() / 1000);
-    return orders
+    const built = orders
       .filter((o) => Number(o.order.expiry) > now)
       .map((o) => buildMarketView(o, config))
       .filter((m): m is MarketView => m !== null);
+    // Market ids are content-derived (see buildMarketView) and unique
+    // across the live book today, but two genuinely-distinct simultaneous
+    // orders sharing maker+impl+direction+strikes+expiry are not
+    // structurally forbidden. Guarantee unique React keys (and a
+    // deterministic selectedId -> order resolution on the money path) by
+    // suffixing any repeat id within a snapshot. No-op in the observed case.
+    const seen = new Map<string, number>();
+    return built.map((m) => {
+      const n = (seen.get(m.id) ?? 0) + 1;
+      seen.set(m.id, n);
+      return n === 1 ? m : { ...m, id: `${m.id}#${n}` };
+    });
   }, [orders, config]);
 
   return { markets, isLoading, error, refetch, dataUpdatedAt };
