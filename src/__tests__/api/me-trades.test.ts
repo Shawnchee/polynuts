@@ -32,6 +32,13 @@ vi.mock('@/lib/supabase/sync', () => ({
   ]),
 }));
 
+// Run after() callbacks synchronously so the deferred settlement sync is
+// observable here (the real after() needs a request scope we don't have in unit tests).
+vi.mock('next/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/server')>();
+  return { ...actual, after: (cb: () => unknown) => { void cb(); } };
+});
+
 import { NextRequest } from 'next/server';
 import { GET, POST } from '@/app/api/me/trades/route';
 import { hasSupabaseConfig } from '@/lib/supabase/server';
@@ -72,21 +79,24 @@ describe('GET /api/me/trades', () => {
     expect(res.status).toBe(503);
   });
 
-  it('returns 200 with rows and settlement sync metadata', async () => {
+  it('returns 200 with rows; settlement sync is deferred, not in the response', async () => {
     const res = await GET(makeRequest({ address: VALID_ADDR }) as never);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.rows).toHaveLength(1);
-    expect(body.synced).toEqual({ settlementsUpserted: 1 });
-    expect(body.syncError).toBeNull();
+    // The sync runs in a deferred after() callback (mocked to run synchronously)
+    // and is no longer part of the response payload.
+    expect(body.synced).toBeUndefined();
+    expect(body.syncError).toBeUndefined();
+    expect(syncSettlementsOnly).toHaveBeenCalled();
   });
 
-  it('still returns rows when settlement sync fails (graceful degradation)', async () => {
+  it('still returns rows when the deferred settlement sync throws (graceful)', async () => {
     vi.mocked(syncSettlementsOnly).mockRejectedValueOnce(new Error('indexer down'));
     const res = await GET(makeRequest({ address: VALID_ADDR }) as never);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.syncError).toBe('indexer down');
+    // The deferred sync's failure is swallowed (logged) and never affects the response.
     expect(body.rows).toHaveLength(1);
   });
 

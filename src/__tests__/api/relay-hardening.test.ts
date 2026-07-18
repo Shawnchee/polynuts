@@ -14,6 +14,13 @@ vi.mock('@/lib/supabase/sync', () => ({
   readUserTrades: vi.fn(async () => [] as unknown[]),
 }));
 
+// Run after() callbacks synchronously so the deferred settlement sync is
+// observable here (the real after() needs a request scope we don't have in unit tests).
+vi.mock('next/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/server')>();
+  return { ...actual, after: (cb: () => unknown) => { void cb(); } };
+});
+
 import { NextRequest } from 'next/server';
 import { GET as indexerGET } from '@/app/api/indexer/[[...path]]/route';
 import { GET as orderbookGET } from '@/app/api/orderbook/[[...path]]/route';
@@ -180,7 +187,6 @@ describe('GET /api/me/trades settlement-sync gate', () => {
     expect(syncSettlementsOnly).not.toHaveBeenCalled();
     const body = await res.json();
     expect(body.rows).toEqual([]);
-    expect(body.synced).toBeNull();
   });
 
   it('runs the settlement sync when the address already has rows', async () => {
