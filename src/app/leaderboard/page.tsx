@@ -268,7 +268,7 @@ function LeaderboardBoard() {
               <div className="text-right">Premium</div>
               <div
                 className="text-right"
-                title="Composite score: premium traded, win rate, and activity"
+                title="Composite score (0–100): win rate, premium traded, and activity"
               >
                 Score
               </div>

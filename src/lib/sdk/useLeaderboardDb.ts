@@ -11,7 +11,7 @@ export interface LeaderboardDbRow {
   win_rate: number | null;
   /** total USDC premium this trader has paid across all fills (public volume) */
   total_premium: number;
-  /** composite Polyscore = premium traded + win rate + activity (no PnL — not exposed) */
+  /** composite Polyscore, 0–100 = win rate + premium traded + activity (no PnL — not exposed) */
   score: number;
   last_trade_at: string | null;
 }
