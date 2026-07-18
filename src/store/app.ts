@@ -191,22 +191,32 @@ export function applyFilterSort(
     out = out.filter((m) => m.expiry === expiryFilter);
   }
 
+  // Deterministic final tiebreak so equal-key rows never reshuffle when the
+  // indexer returns the book in a different order between polls. Ids are
+  // content-derived + stable (see buildMarketView), so this is a total order.
+  const byId = (a: MarketView, b: MarketView) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
   switch (sort) {
     case 'volume':
       out.sort((a, b) =>
-        a.availableUsdc > b.availableUsdc ? -1 : a.availableUsdc < b.availableUsdc ? 1 : 0
+        a.availableUsdc > b.availableUsdc ? -1 : a.availableUsdc < b.availableUsdc ? 1 : byId(a, b)
       );
       break;
     case 'newest':
-      out.sort((a, b) => Number(b.order.order.nonce - a.order.order.nonce));
+      out.sort((a, b) => {
+        const d = Number(b.order.order.nonce - a.order.order.nonce);
+        return d !== 0 ? d : byId(a, b);
+      });
       break;
     case 'soon':
-      out.sort((a, b) => a.expiry - b.expiry);
+      out.sort((a, b) => (a.expiry - b.expiry) || byId(a, b));
       break;
     case 'payout':
-      out.sort(
-        (a, b) => (getMultiplier?.(b) ?? 0) - (getMultiplier?.(a) ?? 0)
-      );
+      out.sort((a, b) => {
+        const d = (getMultiplier?.(b) ?? 0) - (getMultiplier?.(a) ?? 0);
+        return d !== 0 ? d : byId(a, b);
+      });
       break;
   }
 
