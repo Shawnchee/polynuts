@@ -3,6 +3,7 @@ import { Composition } from 'remotion';
 import { PolynutsDemo } from './PolynutsDemo';
 import { WaitlistVideo } from './waitlist/WaitlistVideo';
 import { LaunchTeaser } from './waitlist/LaunchTeaser';
+import { LiveTeaser } from './waitlist/LiveTeaser';
 
 /**
  * Composition registry.
@@ -12,6 +13,8 @@ import { LaunchTeaser } from './waitlist/LaunchTeaser';
  *    kinetic motion-design piece for the waitlist push. Also loops cleanly.
  *  - PolynutsLaunchTeaser: 1080x1080 @ 30fps, 150 frames (5s) — square,
  *    feed-native "launching in a few days" teaser for X. Loops cleanly.
+ *  - PolynutsLive: 1080x1080 @ 30fps, 180 frames (6s) — square launch-day
+ *    "we're LIVE" hype teaser for X. Loops cleanly.
  */
 export const RemotionRoot: React.FC = () => {
   return (
@@ -36,6 +39,14 @@ export const RemotionRoot: React.FC = () => {
         id="PolynutsLaunchTeaser"
         component={LaunchTeaser}
         durationInFrames={150}
+        fps={30}
+        width={1080}
+        height={1080}
+      />
+      <Composition
+        id="PolynutsLive"
+        component={LiveTeaser}
+        durationInFrames={180}
         fps={30}
         width={1080}
         height={1080}
