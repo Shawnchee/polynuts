@@ -24,12 +24,13 @@ const MEDALS = [
   { src: '/medals/bronze.png', tint: '#C8814B' },
 ];
 
-type SortKey = 'pnl' | 'winRate' | 'trades';
+type SortKey = 'score' | 'winRate' | 'trades' | 'premium';
 
 const SORTS: { id: SortKey; label: string }[] = [
-  { id: 'pnl', label: 'Realized PnL' },
+  { id: 'score', label: 'Score' },
   { id: 'winRate', label: 'Win rate' },
   { id: 'trades', label: 'Trades' },
+  { id: 'premium', label: 'Premium' },
 ];
 
 const ACTIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -79,7 +80,7 @@ function LeaderboardHeader() {
         <div>
           <h1 className="text-xl font-bold text-text">Leaderboard</h1>
           <p className="mt-0.5 text-sm text-text-muted">
-            Per-trader rankings — trades, win rate, and realized PnL from Polynuts fills.
+            Per-trader rankings — trades, win rate, premium traded, and a composite score.
           </p>
         </div>
       </div>
@@ -156,7 +157,7 @@ function TradeSkeleton() {
 
 function LeaderboardBoard() {
   const { data, isLoading, error } = useLeaderboardDb();
-  const [sort, setSort] = useState<SortKey>('pnl');
+  const [sort, setSort] = useState<SortKey>('score');
   const [activeOnly, setActiveOnly] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -164,8 +165,8 @@ function LeaderboardBoard() {
 
   const stats = useMemo(() => {
     const trades = rows.reduce((s, r) => s + (r.total_trades || 0), 0);
-    const pnl = rows.reduce((s, r) => s + (Number(r.realized_pnl) || 0), 0);
-    return { traders: rows.length, trades, pnl };
+    const premium = rows.reduce((s, r) => s + (Number(r.total_premium) || 0), 0);
+    return { traders: rows.length, trades, premium };
   }, [rows]);
 
   const view = useMemo(() => {
@@ -182,7 +183,8 @@ function LeaderboardBoard() {
     const sorted = [...filtered].sort((a, b) => {
       if (sort === 'trades') return b.total_trades - a.total_trades;
       if (sort === 'winRate') return rank(b.win_rate) - rank(a.win_rate);
-      return Number(b.realized_pnl) - Number(a.realized_pnl);
+      if (sort === 'premium') return Number(b.total_premium) - Number(a.total_premium);
+      return b.score - a.score;
     });
     return sorted;
   }, [rows, query, activeOnly, sort]);
@@ -205,9 +207,8 @@ function LeaderboardBoard() {
         <StatChip label="Ranked traders" value={isLoading ? '—' : stats.traders.toLocaleString()} />
         <StatChip label="Total trades" value={isLoading ? '—' : stats.trades.toLocaleString()} />
         <StatChip
-          label="Net realized PnL"
-          value={isLoading ? '—' : fmtUsd(stats.pnl, { compact: true })}
-          tone={stats.pnl > 0 ? 'up' : stats.pnl < 0 ? 'down' : 'flat'}
+          label="Premium traded"
+          value={isLoading ? '—' : fmtUsd(stats.premium, { compact: true })}
         />
       </div>
 
@@ -259,13 +260,18 @@ function LeaderboardBoard() {
       <div className="overflow-hidden rounded-xl border border-line bg-bg-elev">
         <div className="scrollbar-thin overflow-x-auto">
           <div className="min-w-[34rem]">
-            <div className="grid grid-cols-[3rem_1fr_5rem_5rem_6rem_7rem] gap-2 border-b border-line px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-text-dim">
+            <div className="grid grid-cols-[3rem_1fr_4.5rem_6rem_7rem_5.5rem] gap-2 border-b border-line px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-text-dim">
               <div>#</div>
               <div>Trader</div>
               <div className="text-right">Trades</div>
-              <div className="text-right">Wins</div>
               <div className="text-right">Win rate</div>
-              <div className="text-right">Realized PnL</div>
+              <div className="text-right">Premium</div>
+              <div
+                className="text-right"
+                title="Composite score: premium traded, win rate, and activity"
+              >
+                Score
+              </div>
             </div>
             <div className="divide-y divide-line">
               {isLoading ? (
@@ -316,18 +322,10 @@ function StatChip({
 }
 
 function Row({ rank, row }: { rank: number; row: LeaderboardDbRow }) {
-  const pnl = Number(row.realized_pnl);
-  const finite = Number.isFinite(pnl);
-  const pnlClass =
-    finite && pnl > 0
-      ? 'text-pump dark:text-pump-dark'
-      : finite && pnl < 0
-      ? 'text-dump dark:text-dump-dark'
-      : 'text-text-dim';
   const medal = rank <= 3 ? MEDALS[rank - 1] : null;
   return (
     <div
-      className="grid grid-cols-[3rem_1fr_5rem_5rem_6rem_7rem] items-center gap-2 px-4 py-2.5 text-sm tabular-nums text-text transition-colors hover:bg-surface-hover"
+      className="grid grid-cols-[3rem_1fr_4.5rem_6rem_7rem_5.5rem] items-center gap-2 px-4 py-2.5 text-sm tabular-nums text-text transition-colors hover:bg-surface-hover"
       style={medal ? { background: `${medal.tint}14` } : undefined}
     >
       <div className="flex items-center">
@@ -347,14 +345,14 @@ function Row({ rank, row }: { rank: number; row: LeaderboardDbRow }) {
       </div>
       <div className="truncate font-mono text-text">{shortAddress(row.address)}</div>
       <div className="num text-right">{fmtCount(row.total_trades)}</div>
-      <div className="num text-right">{fmtCount(row.wins)}</div>
       <div className="num text-right text-text-muted">
         {row.win_rate == null || !Number.isFinite(row.win_rate)
           ? '—'
           : `${row.win_rate.toFixed(1)}%`}
       </div>
-      <div className={`num text-right font-semibold tabular-nums ${pnlClass}`}>
-        {!finite || pnl === 0 ? '—' : `${pnl > 0 ? '+' : ''}${fmtUsd(pnl)}`}
+      <div className="num text-right text-text-muted">{fmtUsd(Number(row.total_premium))}</div>
+      <div className="num text-right font-bold tabular-nums text-brand">
+        {fmtCount(row.score)}
       </div>
     </div>
   );
@@ -370,7 +368,7 @@ function SkeletonRows() {
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-[3rem_1fr_5rem_5rem_6rem_7rem] gap-2 px-4 py-3"
+          className="grid grid-cols-[3rem_1fr_4.5rem_6rem_7rem_5.5rem] gap-2 px-4 py-3"
         >
           <div className="h-3 w-6 animate-pulse rounded bg-line" />
           <div className="h-3 w-40 animate-pulse rounded bg-line" />

@@ -158,8 +158,10 @@ export async function loadAdminData(
     ),
     count(sb.from('settlements').select('*', { count: 'exact', head: true })),
     rows(
+      // Admin-only view (service-role grant) that still exposes realized_pnl —
+      // the public leaderboard_v hides it. See migration 0007/0008.
       sb
-        .from('leaderboard_v')
+        .from('leaderboard_admin_v')
         .select('address,total_trades,wins,win_rate,realized_pnl,last_trade_at')
         .order('realized_pnl', { ascending: false })
         .limit(LEADERBOARD_CAP),
