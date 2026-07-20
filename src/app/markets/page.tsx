@@ -7,8 +7,8 @@ import { BottomNav } from '@/components/nav/BottomNav';
 import { FilterStrip } from '@/components/markets/FilterStrip';
 import { MarketCard } from '@/components/markets/MarketCard';
 import { FeaturedHero } from '@/components/markets/FeaturedHero';
-import { Sidebar } from '@/components/markets/Sidebar';
-import { TradePanel } from '@/components/trade/TradePanel';
+import { MarketTicker } from '@/components/markets/MarketTicker';
+import { TradeDrawer } from '@/components/trade/TradeDrawer';
 import { NetworkGuard } from '@/components/nav/NetworkGuard';
 import { useMarkets } from '@/lib/sdk/useOrders';
 import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
@@ -22,7 +22,9 @@ import { cn } from '@/lib/utils';
 import type { MarketView } from '@/lib/sdk/markets';
 import type { ExpiryFilter } from '@/store/app';
 
-const PAGE_SIZE = 18;
+// 20 divides evenly into the 2/4/5-column breakpoints so pages don't end on a
+// ragged partial row on wide screens (the grid is full-width now).
+const PAGE_SIZE = 20;
 // Maximum markets the featured hero rotates through. Hidden when the
 // filtered set has fewer than FEATURED_MIN markets — below that the
 // hero slider has nothing meaningful to rotate. The previous threshold
@@ -40,33 +42,17 @@ export default function MarketsPage() {
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
 
-  // Selecting a market from a card. Below the `lg` breakpoint the trade panel
-  // renders inline *beneath* the market grid (no sidebar), so on a phone the
-  // panel updates far off-screen and tapping "Bet" looks like it does nothing.
-  // Scroll it into view on those viewports so the panel visibly opens. On `lg`+
-  // the panel is a sticky sidebar that's always visible, so we leave the scroll
-  // position alone.
+  // Selecting a market opens the trade drawer (a focused overlay), so there's
+  // no off-screen sticky panel to scroll into view any more — just set the
+  // selection and the drawer slides in.
   const selectAndReveal = useCallback(
-    (id: string | null) => {
-      selectMarket(id);
-      if (
-        id &&
-        typeof window !== 'undefined' &&
-        window.matchMedia('(max-width: 1023px)').matches
-      ) {
-        requestAnimationFrame(() => {
-          document
-            .getElementById('trade-panel')
-            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-      }
-    },
+    (id: string | null) => selectMarket(id),
     [selectMarket]
   );
 
   // Deep-link selection — the landing "Trade these right now" rows link to
   // /markets?m=<marketId>. Apply it once the order book has loaded so the
-  // clicked market opens straight in the trade panel. Guarded by a ref so a
+  // clicked market opens straight in the trade drawer. Guarded by a ref so a
   // background refetch never re-snaps the user back to the deep-linked market
   // after they've picked something else.
   const deepLinkApplied = useRef(false);
@@ -82,14 +68,6 @@ export default function MarketsPage() {
     if (hit) {
       selectMarket(hit.id);
       deepLinkApplied.current = true;
-      // On mobile the trade panel renders below the grid — bring it into
-      // view so the deep-link visibly "does something". Deferred a frame so
-      // the panel has rendered the selected market first.
-      requestAnimationFrame(() => {
-        document
-          .getElementById('trade-panel')
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
     }
   }, [markets, selectMarket]);
 
@@ -241,95 +219,75 @@ export default function MarketsPage() {
       <TopNav active="/markets" />
       <NetworkGuard />
       <FilterStrip count={filtered.length} expiryGroups={expiryGroups} />
+      <MarketTicker />
 
-      <main className="mx-auto max-w-page px-4 pt-6 pb-20 sm:px-6 sm:pb-6">
-        <div className="flex flex-col gap-6 lg:flex-row">
-          <section className="min-w-0 flex-1 space-y-6">
-            {isLoading && <SkeletonGrid />}
-            {error != null && (
-              <ErrorState
-                msg="Couldn't load markets — Odette API is unreachable or rate-limited."
-                onRetry={() => refetch()}
-              />
-            )}
-            {!isLoading && !error && filtered.length === 0 && (
-              <ExpiryEmptyState
-                hasMarkets={markets.length > 0}
-                onResetExpiry={() => setExpiryFilter('all')}
-                expiryFilter={expiryFilter}
-              />
-            )}
+      <main className="mx-auto max-w-page space-y-6 px-4 pt-6 pb-20 sm:px-6 sm:pb-6">
+        {isLoading && <SkeletonGrid />}
+        {error != null && (
+          <ErrorState
+            msg="Couldn't load markets — Odette API is unreachable or rate-limited."
+            onRetry={() => refetch()}
+          />
+        )}
+        {!isLoading && !error && filtered.length === 0 && (
+          <ExpiryEmptyState
+            hasMarkets={markets.length > 0}
+            onResetExpiry={() => setExpiryFilter('all')}
+            expiryFilter={expiryFilter}
+          />
+        )}
 
-            {!isLoading && !error && filtered.length > 0 && (
-              <div className="flex items-center justify-end">
+        {!isLoading && featured.length > 0 && (
+          <FeaturedHero
+            markets={featured}
+            selectedId={selectedId}
+            onSelect={selectAndReveal}
+            multiplierByMarket={multiplierByMarket}
+          />
+        )}
+
+        {!isLoading && pageRows.length > 0 && (
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <span className="label text-text-muted">
+                {featured.length > 0 ? 'All markets' : 'Markets'}
+              </span>
+              <div className="flex items-center gap-3">
                 <QuotesFreshness updatedAt={dataUpdatedAt} />
+                <span className="num text-xs tabular-nums text-text-dim">
+                  {rest.length.toLocaleString('en-US')} total
+                </span>
               </div>
-            )}
-
-            {!isLoading && featured.length > 0 && (
-              <FeaturedHero
-                markets={featured}
-                selectedId={selectedId}
-                onSelect={selectAndReveal}
-                multiplierByMarket={multiplierByMarket}
-              />
-            )}
-
-            {!isLoading && pageRows.length > 0 && (
-              <>
-                {featured.length > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="label text-text-muted">All markets</span>
-                    <span className="num text-xs tabular-nums text-text-dim">
-                      {rest.length.toLocaleString('en-US')} total
-                    </span>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                  {pageRows.map((m, i) => (
-                    <div
-                      key={m.id}
-                      className={cn(
-                        !entranceDone && 'animate-fade-in',
-                        !entranceDone && i < 8 && `stagger-${(i % 8) + 1}`
-                      )}
-                    >
-                      <MarketCard
-                        market={m}
-                        selected={selectedId === m.id}
-                        onSelect={selectAndReveal}
-                      />
-                    </div>
-                  ))}
-                </div>
-                {totalPages > 1 && (
-                  <Pager
-                    page={safePage}
-                    totalPages={totalPages}
-                    onPage={setPage}
+            </div>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {pageRows.map((m, i) => (
+                <div
+                  key={m.id}
+                  className={cn(
+                    !entranceDone && 'animate-fade-in',
+                    !entranceDone && i < 8 && `stagger-${(i % 8) + 1}`
+                  )}
+                >
+                  <MarketCard
+                    market={m}
+                    selected={selectedId === m.id}
+                    onSelect={selectAndReveal}
                   />
-                )}
-              </>
+                </div>
+              ))}
+            </div>
+            {totalPages > 1 && (
+              <Pager page={safePage} totalPages={totalPages} onPage={setPage} />
             )}
-          </section>
-
-          <div id="trade-panel" className="flex w-full shrink-0 flex-col gap-6 lg:w-[320px]">
-            {/* z-20 keeps the opaque sticky panel painting ABOVE the activity
-                feed below it. The feed's rows carry `animate-fade-in`, whose
-                `both` fill-mode leaves a permanent `transform`, which spawns a
-                stacking context that would otherwise paint over the panel where
-                they overlap during scroll (the "bleed-through" bug). The
-                confirm modal is portaled to <body>, so this context doesn't
-                trap it. */}
-            <div className="relative z-20 lg:sticky lg:top-20">
-              <TradePanel market={selectedMarket} isLoading={isLoading} />
-            </div>
-            <div className="relative z-0 hidden lg:block">
-              <Sidebar />
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </main>
+
+      <TradeDrawer
+        market={selectedMarket}
+        isLoading={isLoading}
+        onClose={() => selectMarket(null)}
+      />
       <BottomNav />
     </div>
   );
