@@ -34,20 +34,20 @@ function safeStrike(n: number): string {
 }
 
 /**
- * Compact Polymarket-style market card.
+ * Compact market card.
  *
- *   ┌──────────────────────────┐
- *   │ ◆ Will ETH close above    │  ← asset glyph + question (2 lines max)
- *   │   $3,200 by 4PM UTC?      │
- *   │                  62¢ ↑    │  ← lead probability + direction arrow
- *   │ ┌────────┐ ┌────────┐    │
- *   │ │ Yes 62¢│ │ No  38¢│    │  ← compact YES/NO row
- *   │ └────────┘ └────────┘    │
- *   │ $84K vol      Tom 08:00   │  ← meta strip at bottom
- *   └──────────────────────────┘
+ *   ┌──────────────────────────────┐
+ *   │ ◆ Will ETH close above        │  ← asset glyph + question (2 lines max)
+ *   │   $1,700 by 12PM UTC?    80%  │  ← implied chance, top-right
+ *   │ ┌──────────────────────────┐  │
+ *   │ │        Bet PUMP          │  │  ← single CTA (direction only)
+ *   │ └──────────────────────────┘  │
+ *   │ up to 1.25x · Tom 08:00  $1K  │  ← decision pair (payout+expiry) | liq
+ *   └──────────────────────────────┘
  *
- * Tighter padding (12px instead of 16px), smaller meta row, big YES/NO
- * buttons that visually dominate to match Polymarket's compact 4-col grid.
+ * The two facts a bettor decides on — max payout and expiry — are grouped
+ * into one prominent line; liquidity is demoted to the far right. Expiry is
+ * emphasis-colored (< 1h red, < 6h amber) so the deadline reads at a glance.
  */
 export function MarketCard({
   market,
@@ -130,45 +130,62 @@ export function MarketCard({
         )}
       </div>
 
-      {/* Outcome row — single CTA per market.
-          The user buys the option (or doesn't); there is no NO side to
-          fill. Bounded structures show "Bet <DIR> · Nx max" using the
-          SDK-derived multiplier; vanilla shows the strike-based CTA
-          (open-ended payoff has no max multiplier to display).
-       */}
-      {!isVanilla && safeMult(multiplier) != null ? (
-        <div className="mt-3">
-          <OutcomeButton
-            label={`Bet ${market.direction} · ${safeMult(multiplier)}x max`}
-            direction={market.direction}
-          />
-        </div>
-      ) : isVanilla ? (
-        <div className="mt-3">
-          <OutcomeButton
-            label={`Bet ${
-              market.direction === 'PUMP' ? 'above' : 'below'
-            } ${safeStrike(
-              Number(client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n))
-            )}`}
-            direction={market.direction}
-          />
-        </div>
-      ) : (
-        <div className="mt-3">
-          <OddsSkeleton loading={binaryLoading} />
-        </div>
-      )}
+      {/* Outcome row — single CTA per market. The user buys the option (or
+          doesn't); there is no NO side to fill. The CTA carries direction
+          only now — the max payout moved down to the decision pair so it
+          reads next to the deadline. The CTA renders immediately (direction
+          is known synchronously); only the "up to Nx" waits on the SDK
+          payout sim. Vanilla shows the strike-based CTA (open-ended payoff,
+          no max multiplier). */}
+      <div className="mt-3">
+        <OutcomeButton
+          label={
+            isVanilla
+              ? `Bet ${
+                  market.direction === 'PUMP' ? 'above' : 'below'
+                } ${safeStrike(
+                  Number(
+                    client.utils.fromStrikeDecimals(market.strikesAsc[0] ?? 0n)
+                  )
+                )}`
+              : `Bet ${market.direction}`
+          }
+          direction={market.direction}
+        />
+      </div>
 
-      {/* Meta strip — liquidity (available order capacity) + expiry */}
-      <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-xs text-text-muted">
-        <span className="num tabular-nums">
-          <span className="num font-semibold text-text">
+      {/* Decision pair — the two facts a bettor decides on, grouped: max
+          payout (reward) sitting right beside expiry (deadline). Liquidity
+          is demoted to the far right. Expiry is emphasis-colored so "how
+          long do I have" reads at a glance. */}
+      <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-xs">
+        <div className="flex min-w-0 items-center gap-1.5">
+          {!isVanilla &&
+            (safeMult(multiplier) != null ? (
+              <span className="num inline-flex items-center gap-1 tabular-nums">
+                <span className="text-text-dim">up to</span>
+                <span className={cn('font-bold', dirColor)}>
+                  {safeMult(multiplier)}x
+                </span>
+              </span>
+            ) : (
+              <span
+                aria-label="Calculating max payout"
+                className={cn(
+                  'inline-block h-3 w-12 rounded bg-bg-subtle',
+                  binaryLoading && 'animate-pulse'
+                )}
+              />
+            ))}
+          {!isVanilla && <span className="text-line">·</span>}
+          <TimerBadge expirySec={market.expiry} emphasis />
+        </div>
+        <span className="num shrink-0 text-[11px] tabular-nums text-text-dim">
+          <span className="font-medium text-text-muted">
             {safeUsd(volume, { compact: true })}
           </span>{' '}
           liq
         </span>
-        <TimerBadge expirySec={market.expiry} />
       </div>
     </button>
   );
@@ -199,16 +216,3 @@ function OutcomeButton({
   );
 }
 
-function OddsSkeleton({ loading }: { loading: boolean }) {
-  // Reserves the CTA-bar height so the card doesn't shift when the SDK
-  // payout sim resolves. animate-pulse (no custom keyframes) per spec.
-  return (
-    <div
-      aria-hidden
-      className={cn(
-        'h-7 rounded-md bg-bg-subtle',
-        loading && 'animate-pulse'
-      )}
-    />
-  );
-}
