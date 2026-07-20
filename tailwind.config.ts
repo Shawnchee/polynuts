@@ -151,6 +151,10 @@ const config: Config = {
           '0%': { background: 'var(--tick-from)' },
           '100%': { background: 'transparent' },
         },
+        'marquee': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both',
@@ -160,6 +164,7 @@ const config: Config = {
         'shimmer': 'shimmer 1.6s ease-in-out infinite',
         'blob': 'blob 18s ease-in-out infinite',
         'tick': 'tick 800ms ease-out',
+        'marquee': 'marquee 60s linear infinite',
       },
     },
   },
