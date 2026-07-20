@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { cn, isUrgent } from '@/lib/utils';
+import { cn, isUrgent, expiryTier } from '@/lib/utils';
 import { Clock } from 'lucide-react';
 
 /**
@@ -16,20 +16,42 @@ import { Clock } from 'lucide-react';
  * Re-renders every 60s so the day-relative labels (today/tomorrow) flip
  * after midnight UTC. The label is fixed, not a countdown.
  */
-export function TimerBadge({ expirySec }: { expirySec: number }) {
+export function TimerBadge({
+  expirySec,
+  emphasis = false,
+}: {
+  expirySec: number;
+  /**
+   * When set, color the badge by a three-tier urgency band (< 1h red,
+   * < 6h amber, else muted) instead of the single < 30m red flag. Used on
+   * the market card / hero "decision pair" where the deadline is a primary
+   * signal; left off elsewhere so existing surfaces keep their look.
+   */
+  emphasis?: boolean;
+}) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000);
     return () => clearInterval(id);
   }, []);
   const valid = Number.isFinite(expirySec);
+  const tier = valid ? expiryTier(expirySec) : 'normal';
   const urgent = valid && isUrgent(expirySec);
   const label = valid ? fmtAbsoluteExpiry(expirySec) : '—';
+  const colorCls = emphasis
+    ? tier === 'critical'
+      ? 'text-dump font-semibold'
+      : tier === 'soon'
+      ? 'text-gold font-medium'
+      : 'text-text-muted'
+    : urgent
+    ? 'text-dump font-semibold'
+    : 'text-text-muted';
   return (
     <span
       className={cn(
         'num inline-flex items-center gap-1 text-xs tabular-nums leading-none',
-        urgent ? 'text-dump font-semibold' : 'text-text-muted'
+        colorCls
       )}
       title={valid ? new Date(expirySec * 1000).toUTCString() : undefined}
       aria-label={valid ? `Settles ${label}${urgent ? ' (closing soon)' : ''}` : 'Settlement time unavailable'}

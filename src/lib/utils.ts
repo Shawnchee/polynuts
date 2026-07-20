@@ -48,6 +48,27 @@ export function isUrgent(expirySec: number) {
   return left > 0 && left < 30 * 60;
 }
 
+export type ExpiryTier = 'critical' | 'soon' | 'normal';
+
+/**
+ * Coarser urgency band for expiry emphasis, used to color the payout+expiry
+ * "decision pair" on market surfaces so "how long do I have" reads at a glance:
+ *
+ *   - critical: < 1h left   → red (dump)
+ *   - soon:     < 6h left   → amber (gold)
+ *   - normal:   everything else (and already-expired) → muted
+ *
+ * Distinct from `isUrgent` (a single < 30m boolean kept stable for its tests).
+ */
+export function expiryTier(expirySec: number): ExpiryTier {
+  if (!Number.isFinite(expirySec)) return 'normal';
+  const left = expirySec - Math.floor(Date.now() / 1000);
+  if (left <= 0) return 'normal';
+  if (left < 60 * 60) return 'critical';
+  if (left < 6 * 60 * 60) return 'soon';
+  return 'normal';
+}
+
 /** Compact "time since" label for an ISO timestamp, e.g. "3m ago", "2h ago". */
 export function fmtTimeAgo(iso: string): string {
   const t = Date.parse(iso);
