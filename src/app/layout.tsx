@@ -91,6 +91,9 @@ export const metadata: Metadata = {
     description: 'Bet PUMP or DUMP on crypto. Real options under the hood.',
     images: [OG_IMAGE],
   },
+  other: {
+    'base:app_id': '6a7c064c3d490b7a57a06734',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
