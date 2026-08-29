@@ -29,7 +29,7 @@ import { getPartnerBrokerFeeBps, computePartnerFee } from '@/lib/sdk/partnerBrok
 import { useSignerClient } from '@/lib/sdk/useSignerClient';
 import { useUsdcBalance } from '@/lib/sdk/useUsdcBalance';
 import { useFillPayout, useMarketBinaryFraming } from '@/lib/sdk/usePayout';
-import { useUsdcAllowance, MAX_UINT256 } from '@/lib/sdk/useUsdcAllowance';
+import { useUsdcAllowance } from '@/lib/sdk/useUsdcAllowance';
 import { DirectionTag } from '@/components/ui/DirectionTag';
 import { PriceToBeat } from '@/components/trade/PriceToBeat';
 import { HowItSettles } from '@/components/trade/HowItSettles';
@@ -112,8 +112,9 @@ export function TradePanel({
   // Check the current USDC allowance against the order's OptionBook spender.
   // When allowance < bet, we surface a separate "Approve USDC" button so
   // the user does the approval explicitly first (instead of two wallet
-  // popups inside one click). Approving max-uint256 means future bets up
-  // to that allowance fire fillOrder directly with no second wallet popup.
+  // popups inside one click). The approval is sized to the current bet
+  // (premium + broker fee), so a later, larger bet re-approves; anything at
+  // or under the existing allowance fires fillOrder with no second popup.
   const orderOptionBook =
     market?.order.rawApiData?.optionBookAddress ??
     signerClient?.chainConfig.contracts.optionBook ??
@@ -238,7 +239,8 @@ export function TradePanel({
   // Amount-independent "is USDC usable for trading at all" signal — drives
   // the persistent allowance control so the user can approve proactively
   // before they've sized a bet. Treats "covers at least the minimum bet" as
-  // approved (a max-uint256 approval trivially clears this).
+  // approved; a bet larger than the remaining allowance still re-approves via
+  // needsApproval / ensureAllowance on the fill path.
   const approvedForTrading = useMemo(() => {
     if (!allowance) return false;
     try {
@@ -259,15 +261,20 @@ export function TradePanel({
     }
     setApproving(true);
     const t = toast.loading('Sign the approval in your wallet…');
+    // Approve exactly what this bet costs — premium + broker fee, the same
+    // figure the fill path passes to ensureAllowance. An unlimited approval
+    // would leave the spender able to pull the wallet's entire USDC balance
+    // forever, and every wallet's simulation engine (Blockaid / Blowfish)
+    // scores max-uint256 as a red flag, which is a large part of why this
+    // domain gets a "malicious" interstitial on connect.
+    const approveAmount = toBigInt(String(amount), 6) + feeUsdc;
     polynutsLogger.info?.('approve start', {
       usdc: signerClient.chainConfig.tokens.USDC.address,
       spender: approvalSpender,
-      amount: 'MAX_UINT256',
+      amount: approveAmount.toString(),
     });
     try {
       const usdcAddr = signerClient.chainConfig.tokens.USDC.address;
-      // Approve max — single approval covers all future bets. Standard DeFi
-      // pattern; users can revoke at revoke.cash if they ever want to.
       //
       // We bypass the SDK's `signerClient.erc20.approve(...)` (which doesn't
       // expose tx overrides) and build the call directly through ethers so
@@ -283,7 +290,7 @@ export function TradePanel({
       ]);
       const data = erc20.encodeFunctionData('approve', [
         approvalSpender,
-        MAX_UINT256,
+        approveAmount,
       ]);
       const tx = await signer.sendTransaction({
         to: usdcAddr,
@@ -297,7 +304,7 @@ export function TradePanel({
       const explorer = signerClient.chainConfig.explorerUrl;
       toast.success(
         <span>
-          USDC approved! You can bet without re-approving.{' '}
+          USDC approved for this bet.{' '}
           {receipt?.hash && (
             <a
               className="text-brand underline"
