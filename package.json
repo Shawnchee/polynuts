@@ -22,8 +22,6 @@
   "dependencies": {
     "@gsap/react": "^2.1.2",
     "@rainbow-me/rainbowkit": "^2.2.8",
-    "@remotion/cli": "4.0.370",
-    "@remotion/google-fonts": "4.0.370",
     "@supabase/ssr": "^0.5.1",
     "@supabase/supabase-js": "^2.45.4",
     "@tanstack/react-query": "^5.59.0",
@@ -40,7 +38,6 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^2.15.4",
-    "remotion": "4.0.370",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.4",
     "viem": "^2.21.30",
@@ -48,6 +45,8 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@remotion/cli": "4.0.370",
+    "@remotion/google-fonts": "4.0.370",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -57,6 +56,7 @@
     "eslint-config-next": "16.3.3",
     "playwright": "^1.60.0",
     "postcss": "^8.4.47",
+    "remotion": "4.0.370",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.3",
     "vitest": "^4.1.8"
