@@ -277,14 +277,19 @@ export function TradePanel({
       const usdcAddr = signerClient.chainConfig.tokens.USDC.address;
       //
       // We bypass the SDK's `signerClient.erc20.approve(...)` (which doesn't
-      // expose tx overrides) and build the call directly through ethers so
-      // we can pin `gasLimit`. ERC20 approve is deterministic ~46k gas.
-      // Hardcoding 80k means the wallet does NOT need to call
-      // `eth_estimateGas` against its own RPC before opening the popup —
-      // which is the main reason the approve popup spins forever for users
-      // whose wallet is configured with a slow / rate-limited public Base
-      // RPC. The wallet sees a fully-formed tx and can render Confirm/Reject
-      // immediately.
+      // expose tx overrides) and build the call directly through ethers so we
+      // can attach our own gas limit.
+      //
+      // Estimate through OUR configured RPC rather than pinning a constant.
+      // A hardcoded gasLimit skips the wallet's own eth_estimateGas — which
+      // was the point (it stops the popup hanging on a slow / rate-limited
+      // public Base RPC) — but it also reads as simulation evasion: forcing
+      // gas so the wallet can't detect a revert is a drainer signature, and
+      // Rabby / MetaMask score it accordingly. Estimating here keeps the
+      // popup fast (the estimate is already done by the time it opens, on an
+      // RPC we control) while still handing the wallet a genuine, verifiable
+      // number. Fall back to a safe constant only if the estimate fails, so a
+      // flaky RPC degrades to the old behaviour instead of blocking approval.
       const erc20 = new ethers.Interface([
         'function approve(address spender, uint256 value)',
       ]);
@@ -292,10 +297,20 @@ export function TradePanel({
         approvalSpender,
         approveAmount,
       ]);
+      let gasLimit = 80_000n;
+      try {
+        const gas = await signer.estimateGas({ to: usdcAddr, data });
+        gasLimit = (gas * 120n) / 100n;
+      } catch (gasErr) {
+        polynutsLogger.warn?.('approve gas estimate failed, using fallback', {
+          fallback: gasLimit.toString(),
+          err: gasErr instanceof Error ? gasErr.message : String(gasErr),
+        });
+      }
       const tx = await signer.sendTransaction({
         to: usdcAddr,
         data,
-        gasLimit: 80_000n,
+        gasLimit,
       });
       const receipt = await tx.wait();
       polynutsLogger.info?.('approve mined', { txHash: receipt?.hash });
