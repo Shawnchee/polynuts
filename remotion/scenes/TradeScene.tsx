@@ -101,7 +101,6 @@ export const TradeScene: React.FC = () => {
           direction="PUMP"
           chancePct={56}
           multiplier="1.8"
-          volume="$10K"
           expiry="16:00 UTC"
           selected
           selectProgress={1}

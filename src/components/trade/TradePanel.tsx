@@ -52,6 +52,12 @@ type ChartTab = 'payout' | 'spot';
 const SIZES = [1, 5, 10, 25, 100] as const;
 const MIN_BET = 0.5;
 
+function formatUsdc6(amount: bigint): string {
+  return Number(fromBigInt(amount, 6)).toLocaleString('en-US', {
+    maximumFractionDigits: 6,
+  });
+}
+
 interface PreviewState {
   numContracts: bigint;
   /** Maximum contracts the maker has signed for — caps user's bet */
@@ -59,7 +65,9 @@ interface PreviewState {
   pricePerContract: bigint;
   /** Same currency as `numContracts × pricePerContract / 1e8`, in 6-dec USDC */
   totalCollateral: bigint;
-  /** True when usdcAmount would have exceeded the cap and was clamped */
+  /** Exact max premium the current signed order can quote, in 6-dec USDC. */
+  maxSupportedUsdc: bigint;
+  /** True when the requested amount exceeds the current quote capacity. */
   capped: boolean;
 }
 
@@ -163,16 +171,15 @@ export function TradePanel({
     const id = setTimeout(() => {
       try {
         const usdcAmount = toBigInt(String(amount), 6);
+        const capacity = readClient.optionBook.previewFillOrder(market.order);
         const p = readClient.optionBook.previewFillOrder(market.order, usdcAmount);
-        // The SDK silently caps numContracts at maxContracts when usdcAmount
-        // exceeds the maker's available size — surface that to the user
-        // instead of letting them think their full bet went on.
-        const capped = p.numContracts >= p.maxContracts && p.maxContracts > 0n;
+        const capped = usdcAmount > capacity.totalCollateral;
         setPreview({
           numContracts: p.numContracts,
           maxContracts: p.maxContracts,
           pricePerContract: p.pricePerContract,
           totalCollateral: p.totalCollateral,
+          maxSupportedUsdc: capacity.totalCollateral,
           capped,
         });
         setPreviewError(null);
@@ -190,6 +197,16 @@ export function TradePanel({
   // pure module helper so the React Compiler memoizes it with the render.
   const feeUsdc = computeBrokerFee(feeBps, amount, market);
   const feeUsd = Number(feeUsdc) / 1e6;
+  const maxBetUsd = preview ? Number(preview.maxSupportedUsdc) / 1e6 : 0;
+  const maxBetLabel = preview ? formatUsdc6(preview.maxSupportedUsdc) : null;
+  const amountExceedsQuote = useMemo(() => {
+    if (!preview) return false;
+    try {
+      return toBigInt(String(amount), 6) > preview.maxSupportedUsdc;
+    } catch {
+      return true;
+    }
+  }, [amount, preview]);
 
   // Flag the global store while a trade is mid-flight (confirm modal open,
   // approving, or fill submitting) so order-book polling pauses and the
@@ -394,6 +411,10 @@ export function TradePanel({
     }
     if (amount < MIN_BET) {
       toast.error(`Minimum bet is $${MIN_BET.toFixed(2)} USDC`);
+      return;
+    }
+    if (preview && toBigInt(String(amount), 6) > preview.maxSupportedUsdc) {
+      toast.error(`This quote supports up to $${maxBetLabel} USDC`);
       return;
     }
     if (!preview) {
@@ -777,7 +798,7 @@ export function TradePanel({
       <div className="mt-4">
         <div className="label text-text-dim">Amount</div>
         <div className="mt-2 grid grid-cols-5 gap-1.5">
-          {SIZES.map((s) => (
+          {SIZES.filter((s) => !preview || s <= maxBetUsd).map((s) => (
             <button
               key={s}
               onClick={() => setAmountInput(String(s))}
@@ -791,16 +812,30 @@ export function TradePanel({
               ${s}
             </button>
           ))}
+          {preview && maxBetUsd >= MIN_BET && (
+            <button
+              key="max"
+              onClick={() => setAmountInput(maxBetUsd.toFixed(6).replace(/0+$/, '').replace(/\.$/, ''))}
+              className={cn(
+                'press-scale min-h-[44px] rounded-md border px-1 py-2 text-sm font-medium tabular-nums num transition-colors duration-120 sm:min-h-0',
+                !amountExceedsQuote && amount === maxBetUsd
+                  ? 'border-text bg-text text-bg-elev'
+                  : 'border-line text-text hover:border-text-dim hover:bg-surface-hover'
+              )}
+            >
+              Max ${maxBetLabel}
+            </button>
+          )}
         </div>
         <div className="mt-2 flex items-center gap-2">
           <span className="label text-text-dim">Custom</span>
           <input
             // Free-form text input — accepts any partial value while typing
             // ("1.", "10.5", "") so the cursor never jumps. Validation runs
-            // at submit time against MIN_BET.
+            // against the current quote's min and max at submit time.
             type="text"
             inputMode="decimal"
-            placeholder={`min $${MIN_BET.toFixed(2)}`}
+            placeholder={`$${MIN_BET.toFixed(2)} – ${preview ? `$${maxBetLabel} max` : 'loading quote'}`}
             value={amountInput}
             onChange={(e) => {
               // Permit only digits + a single dot — strip everything else
@@ -815,6 +850,21 @@ export function TradePanel({
         {amountInput !== '' && amount > 0 && amount < MIN_BET && (
           <p className="mt-1 text-xs text-dump dark:text-dump-dark">
             Minimum bet is ${MIN_BET.toFixed(2)} USDC
+          </p>
+        )}
+        {preview && maxBetUsd >= MIN_BET && (
+          <p className="mt-1 text-xs text-text-dim">
+            Quote supports ${MIN_BET.toFixed(2)}–${maxBetLabel} USDC
+          </p>
+        )}
+        {preview && maxBetUsd < MIN_BET && (
+          <p className="mt-1 text-xs text-dump dark:text-dump-dark">
+            Quote maximum ${maxBetLabel} is below the ${MIN_BET.toFixed(2)} minimum
+          </p>
+        )}
+        {amountExceedsQuote && (
+          <p className="mt-1 text-xs text-dump dark:text-dump-dark">
+            Amount exceeds this quote’s ${maxBetLabel} maximum
           </p>
         )}
       </div>
@@ -935,14 +985,11 @@ export function TradePanel({
 
       {preview?.capped && (
         <p className="mt-2 text-xs text-text-muted">
-          Maker cap reached — this order can absorb at most{' '}
+          The current quote supports at most{' '}
           <span className="num font-semibold text-text">
-            $
-            {Number(
-              readClient.utils.formatAmount(preview.totalCollateral, 6, 0)
-            ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+            ${maxBetLabel}
           </span>
-          . Larger amount sizes fill against the cap.
+          . Lower the amount to continue.
         </p>
       )}
 
@@ -1014,6 +1061,8 @@ export function TradePanel({
               insufficientBalance ||
               !preview ||
               amount < MIN_BET ||
+              amountExceedsQuote ||
+              maxBetUsd < MIN_BET ||
               !ready ||
               needsApproval
             }
@@ -1025,6 +1074,8 @@ export function TradePanel({
                 insufficientBalance ||
                 !preview ||
                 amount < MIN_BET ||
+                amountExceedsQuote ||
+                maxBetUsd < MIN_BET ||
                 !ready ||
                 needsApproval) &&
                 'cursor-not-allowed opacity-60'
@@ -1039,6 +1090,10 @@ export function TradePanel({
               ? 'Insufficient USDC'
               : amount < MIN_BET
               ? `Min $${MIN_BET.toFixed(2)}`
+              : maxBetUsd < MIN_BET
+              ? 'Quote below minimum'
+              : amountExceedsQuote
+              ? `Max $${maxBetLabel}`
               : needsApproval
               ? 'Approve USDC above to bet'
               : !preview

@@ -18,7 +18,7 @@ import {
   buildExpiryGroups,
 } from '@/store/app';
 import { cn } from '@/lib/utils';
-import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
+import type { MarketView } from '@/lib/sdk/markets';
 import type { ExpiryFilter } from '@/store/app';
 
 // 20 divides evenly into the 2/4/5-column breakpoints so pages don't end on a
@@ -40,7 +40,6 @@ export default function MarketsPage() {
   const setExpiryFilter = useAppStore((s) => s.setExpiryFilter);
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
-  const prices = useAppStore((s) => s.prices);
 
   // Selecting a market opens the trade drawer (a focused overlay), so there's
   // no off-screen sticky panel to scroll into view any more — just set the
@@ -100,55 +99,17 @@ export default function MarketsPage() {
         filter,
         sort,
         (m) => multiplierByMarket.get(m.id) ?? null,
-        expiryFilter,
-        prices
+        expiryFilter
       ),
-    [markets, filter, sort, multiplierByMarket, expiryFilter, prices]
+    [markets, filter, sort, multiplierByMarket, expiryFilter]
   );
 
-  // Top-N featured strip — ranked by available volume × multiplier so we
-  // surface markets with both real liquidity and meaningful upside.
-  // Hidden when there's <= FEATURED_COUNT total or no multipliers loaded.
-  // USD liquidity uses collateral token decimals and the live underlying spot;
-  // multiplier comes from client.option.simulatePayout. The
-  // composite score formula is product-taxonomy, not a payout calculation.
-
-  // Market set plus multiplier availability controls featured membership.
-  const featuredSig = useMemo(() => {
-    if (filtered.length < FEATURED_MIN) return '';
-    return filtered
-      .map((m) => `${m.id}:${multiplierByMarket.has(m.id) ? 1 : 0}`)
-      .sort()
-      .join('|');
-  }, [filtered, multiplierByMarket]);
-
-  // Re-rank when the market set, payout availability, or an underlying spot
-  // changes, so mixed-collateral liquidity remains comparable in USD.
-  const featuredIdList = useMemo(() => {
-    if (filtered.length < FEATURED_MIN) return [] as string[];
-    return [...filtered]
-      .map((m) => {
-        const vol = marketLiquidityUsd(m, prices) ?? 0;
-        const mult = multiplierByMarket.get(m.id) ?? 0;
-        return { id: m.id, score: vol * Math.max(1, Math.min(10, mult)) };
-      })
-      // Final id tiebreak so an exact score tie ranks deterministically
-      // between recomputes.
-      .sort((a, b) =>
-        b.score !== a.score ? b.score - a.score : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-      )
-      .slice(0, FEATURED_COUNT)
-      .map((r) => r.id);
-  }, [featuredSig, prices.ETH, prices.BTC]);
-
-  // Resolve the frozen ids back to CURRENT market objects so displayed values
-  // stay live; only membership + order are frozen between signature changes.
-  const featured = useMemo(() => {
-    const byId = new Map(filtered.map((m) => [m.id, m] as const));
-    return featuredIdList
-      .map((id) => byId.get(id))
-      .filter((m): m is MarketView => m != null);
-  }, [filtered, featuredIdList]);
+  // Feature the markets in the user's current sort order. This avoids treating
+  // the upstream available amount as liquidity or inventing an alternate score.
+  const featured = useMemo(
+    () => (filtered.length < FEATURED_MIN ? [] : filtered.slice(0, FEATURED_COUNT)),
+    [filtered]
+  );
 
   const featuredIds = useMemo(
     () => new Set(featured.map((m) => m.id)),

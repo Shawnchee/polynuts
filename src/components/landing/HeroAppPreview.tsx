@@ -3,31 +3,21 @@
 import { useRouter } from 'next/navigation';
 import { MarketCard } from '@/components/markets/MarketCard';
 import { useMarkets } from '@/lib/sdk/useOrders';
-import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
-import { useAppStore } from '@/store/app';
+import type { MarketView } from '@/lib/sdk/markets';
 
 const DIR_ORDER: Record<MarketView['direction'], number> = { PUMP: 0, DUMP: 1, RANGE: 2 };
 
 // Same selection logic as LiveMarkets: Polynuts is a BTC/ETH product, so the
 // hero preview only showcases those. One market per (asset, direction),
-// highest volume winning, then take the top two so the window shows a varied,
+// earliest-expiring winning, then take the top two so the window shows a varied,
 // real cross-section (typically BTC PUMP + BTC DUMP — green/rose contrast).
-function pickTwo(
-  markets: MarketView[],
-  prices: Partial<Record<'ETH' | 'BTC', number>>
-): MarketView[] {
+function pickTwo(markets: MarketView[]): MarketView[] {
   const best = new Map<string, MarketView>();
   for (const m of markets) {
     if (m.asset !== 'BTC' && m.asset !== 'ETH') continue;
     const key = `${m.asset}-${m.direction}`;
     const cur = best.get(key);
-    if (
-      !cur ||
-      (marketLiquidityUsd(m, prices) ?? -1) >
-        (marketLiquidityUsd(cur, prices) ?? -1)
-    ) {
-      best.set(key, m);
-    }
+    if (!cur || m.expiry < cur.expiry || (m.expiry === cur.expiry && m.id < cur.id)) best.set(key, m);
   }
   return [...best.values()]
     .sort((a, b) =>
@@ -61,8 +51,7 @@ function CardSkeleton() {
 export function HeroAppPreview() {
   const router = useRouter();
   const { markets, isLoading } = useMarkets();
-  const prices = useAppStore((s) => s.prices);
-  const picks = pickTwo(markets, prices);
+  const picks = pickTwo(markets);
   const showSkeleton = isLoading && picks.length === 0;
   const empty = !isLoading && picks.length === 0;
 

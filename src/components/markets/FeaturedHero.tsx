@@ -2,22 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Flame } from 'lucide-react';
-import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
+import type { MarketView } from '@/lib/sdk/markets';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { TokenIcon } from '@/components/ui/TokenIcon';
-import { fmtUsd, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
-import { useAppStore } from '@/store/app';
 
 const ROTATE_MS = 9_000;
-
-// Safe formatting — guards NaN/Infinity from SDK decimal parsing so a
-// brand-new market never renders "$NaN"/"NaNx". fmtUsd itself lives in
-// lib/utils (not owned here); see report note.
-function safeUsd(n: number, opts?: { compact?: boolean }): string {
-  return Number.isFinite(n) ? fmtUsd(n, opts) : '$0.00';
-}
 
 function safeMult(n: number | null | undefined, digits = 2): string | null {
   return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(digits) : null;
@@ -44,9 +36,8 @@ function dirText(direction: MarketView['direction']): string {
  * MarketTicker, where nothing is clickable). Auto-rotates the banner every 9s,
  * pauses on hover; arrows + dots give manual control.
  *
- * Featured ranking comes pre-computed from the parent (volume × payout
- * multiplier — see page.tsx). All input values flow from SDK paths
- * (client.utils.fromUsdcDecimals + client.option.simulatePayout).
+ * Featured ranking comes pre-computed from the parent. Payout framing comes
+ * from the SDK's simulatePayout path.
  */
 export function FeaturedHero({
   markets,
@@ -135,8 +126,6 @@ function HeroBanner({
       : null;
   const multiplier = binary?.multiplier ?? null;
   const binaryLoading = !binary && market.family !== 'vanilla';
-  const prices = useAppStore((s) => s.prices);
-  const volume = marketLiquidityUsd(market, prices);
   const isVanilla = market.family === 'vanilla';
   const dirColor = dirText(market.direction);
 
@@ -215,12 +204,6 @@ function HeroBanner({
         <span className="h-8 w-px bg-line" aria-hidden />
         <PairStat label="Closes">
           <TimerBadge expirySec={market.expiry} emphasis />
-        </PairStat>
-        <span className="hidden h-8 w-px bg-line sm:block" aria-hidden />
-        <PairStat label="Liquidity">
-          <span className="num text-sm font-semibold tabular-nums text-text">
-            {volume == null ? '—' : safeUsd(volume, { compact: true })}
-          </span>
         </PairStat>
       </div>
 

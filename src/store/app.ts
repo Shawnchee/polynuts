@@ -2,10 +2,9 @@
 
 import { create } from 'zustand';
 import type { MarketView } from '@/lib/sdk/markets';
-import { marketLiquidityUsd } from '@/lib/sdk/markets';
 
 export type FilterTab = 'all' | 'pump' | 'dump' | 'range' | 'soon';
-export type SortKey = 'volume' | 'newest' | 'soon' | 'payout';
+export type SortKey = 'newest' | 'soon' | 'payout';
 
 /**
  * Expiry filter — either an exact unix timestamp (seconds) matching one
@@ -174,8 +173,7 @@ export function applyFilterSort(
   filter: FilterTab,
   sort: SortKey,
   getMultiplier?: (m: MarketView) => number | null,
-  expiryFilter: ExpiryFilter = 'all',
-  prices: Partial<Record<'ETH' | 'BTC', number>> = {}
+  expiryFilter: ExpiryFilter = 'all'
 ): MarketView[] {
   let out = [...markets];
 
@@ -200,12 +198,6 @@ export function applyFilterSort(
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 
   switch (sort) {
-    case 'volume':
-      out.sort((a, b) =>
-        (marketLiquidityUsd(b, prices) ?? -1) -
-          (marketLiquidityUsd(a, prices) ?? -1) || byId(a, b)
-      );
-      break;
     case 'newest':
       out.sort((a, b) => {
         const d = Number(b.order.order.nonce - a.order.order.nonce);

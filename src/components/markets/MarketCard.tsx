@@ -1,12 +1,11 @@
 'use client';
 
-import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
+import type { MarketView } from '@/lib/sdk/markets';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { TokenIcon } from '@/components/ui/TokenIcon';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
-import { useAppStore } from '@/store/app';
 
 const directionGlow: Record<MarketView['direction'], string> = {
   PUMP: 'glow-pump',
@@ -14,10 +13,8 @@ const directionGlow: Record<MarketView['direction'], string> = {
   RANGE: 'glow-range',
 };
 
-// Safe money — unknown collateral valuations render as unavailable rather
-// than implying that native token units are USDC.
 function safeUsd(n: number, opts?: { compact?: boolean }): string {
-  return Number.isFinite(n) ? fmtUsd(n, opts) : '$0.00';
+  return Number.isFinite(n) ? fmtUsd(n, opts) : '—';
 }
 
 // Safe multiplier — guards NaN/Infinity so we never render "NaNx"/"Infinityx".
@@ -42,11 +39,11 @@ function safeStrike(n: number): string {
  *   │ ┌──────────────────────────┐  │
  *   │ │        Bet PUMP          │  │  ← single CTA (direction only)
  *   │ └──────────────────────────┘  │
- *   │ up to 1.25x · Tom 08:00  $1K  │  ← decision pair (payout+expiry) | liq
+ *   │ up to 1.25x · Tom 08:00       │  ← max payout + expiry
  *   └──────────────────────────────┘
  *
  * The two facts a bettor decides on — max payout and expiry — are grouped
- * into one prominent line; liquidity is demoted to the far right. Expiry is
+ * into one prominent line. Expiry is
  * emphasis-colored (< 1h red, < 6h amber) so the deadline reads at a glance.
  */
 export function MarketCard({
@@ -59,8 +56,6 @@ export function MarketCard({
   onSelect: (id: string) => void;
 }) {
   const client = getReadClient();
-  const prices = useAppStore((s) => s.prices);
-  const volume = marketLiquidityUsd(market, prices);
   const { data: binary, isLoading: binaryLoading } = useMarketBinaryFraming(market);
   // Implied probability for the % chance corner indicator only — derived
   // from the SDK-simulated max payout (1 / multiplier). No NO side; the
@@ -155,11 +150,10 @@ export function MarketCard({
         />
       </div>
 
-      {/* Decision pair — the two facts a bettor decides on, grouped: max
-          payout (reward) sitting right beside expiry (deadline). Liquidity
-          is demoted to the far right. Expiry is emphasis-colored so "how
-          long do I have" reads at a glance. */}
-      <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-xs">
+      {/* Decision pair — max payout sits beside expiry, the deadline the bet
+          turns on. Expiry is emphasis-colored so "how long do I have" reads
+          at a glance. */}
+      <div className="mt-auto flex items-center gap-2 pt-3 text-xs">
         <div className="flex min-w-0 items-center gap-1.5">
           {!isVanilla &&
             (safeMult(multiplier) != null ? (
@@ -181,12 +175,6 @@ export function MarketCard({
           {!isVanilla && <span className="text-line">·</span>}
           <TimerBadge expirySec={market.expiry} emphasis />
         </div>
-        <span className="num shrink-0 text-[11px] tabular-nums text-text-dim">
-          <span className="font-medium text-text-muted">
-            {volume == null ? '—' : safeUsd(volume, { compact: true })}
-          </span>{' '}
-          liq
-        </span>
       </div>
     </button>
   );
