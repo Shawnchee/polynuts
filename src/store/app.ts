@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import type { MarketView } from '@/lib/sdk/markets';
+import { marketLiquidityUsd } from '@/lib/sdk/markets';
 
 export type FilterTab = 'all' | 'pump' | 'dump' | 'range' | 'soon';
 export type SortKey = 'volume' | 'newest' | 'soon' | 'payout';
@@ -173,7 +174,8 @@ export function applyFilterSort(
   filter: FilterTab,
   sort: SortKey,
   getMultiplier?: (m: MarketView) => number | null,
-  expiryFilter: ExpiryFilter = 'all'
+  expiryFilter: ExpiryFilter = 'all',
+  prices: Partial<Record<'ETH' | 'BTC', number>> = {}
 ): MarketView[] {
   let out = [...markets];
 
@@ -200,7 +202,8 @@ export function applyFilterSort(
   switch (sort) {
     case 'volume':
       out.sort((a, b) =>
-        a.availableUsdc > b.availableUsdc ? -1 : a.availableUsdc < b.availableUsdc ? 1 : byId(a, b)
+        (marketLiquidityUsd(b, prices) ?? -1) -
+          (marketLiquidityUsd(a, prices) ?? -1) || byId(a, b)
       );
       break;
     case 'newest':
