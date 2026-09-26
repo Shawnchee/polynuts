@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import type { MarketView } from '@/lib/sdk/markets';
 
 export type FilterTab = 'all' | 'pump' | 'dump' | 'range' | 'soon';
-export type SortKey = 'volume' | 'newest' | 'soon' | 'payout';
+export type SortKey = 'newest' | 'soon' | 'payout';
 
 /**
  * Expiry filter — either an exact unix timestamp (seconds) matching one
@@ -198,11 +198,6 @@ export function applyFilterSort(
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 
   switch (sort) {
-    case 'volume':
-      out.sort((a, b) =>
-        a.availableUsdc > b.availableUsdc ? -1 : a.availableUsdc < b.availableUsdc ? 1 : byId(a, b)
-      );
-      break;
     case 'newest':
       out.sort((a, b) => {
         const d = Number(b.order.order.nonce - a.order.order.nonce);

@@ -9,7 +9,7 @@ const DIR_ORDER: Record<MarketView['direction'], number> = { PUMP: 0, DUMP: 1, R
 
 // Same selection logic as LiveMarkets: Polynuts is a BTC/ETH product, so the
 // hero preview only showcases those. One market per (asset, direction),
-// highest volume winning, then take the top two so the window shows a varied,
+// earliest-expiring winning, then take the top two so the window shows a varied,
 // real cross-section (typically BTC PUMP + BTC DUMP — green/rose contrast).
 function pickTwo(markets: MarketView[]): MarketView[] {
   const best = new Map<string, MarketView>();
@@ -17,7 +17,7 @@ function pickTwo(markets: MarketView[]): MarketView[] {
     if (m.asset !== 'BTC' && m.asset !== 'ETH') continue;
     const key = `${m.asset}-${m.direction}`;
     const cur = best.get(key);
-    if (!cur || m.availableUsdc > cur.availableUsdc) best.set(key, m);
+    if (!cur || m.expiry < cur.expiry || (m.expiry === cur.expiry && m.id < cur.id)) best.set(key, m);
   }
   return [...best.values()]
     .sort((a, b) =>

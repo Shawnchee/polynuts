@@ -8,7 +8,6 @@ import { TimerBadge } from '@/components/ui/TimerBadge';
 import { useMarkets } from '@/lib/sdk/useOrders';
 import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
-import { fmtUsd } from '@/lib/utils';
 import type { MarketView } from '@/lib/sdk/markets';
 
 const TOP_N = 6;
@@ -20,9 +19,8 @@ const DIR_COLOR: Record<MarketView['direction'], string> = {
   RANGE: 'text-violet-400',
 };
 
-// Market | Bet | Volume | Expiry. Volume is hidden on mobile so the visible
-// cell count always matches the grid track count at each breakpoint.
-const COLS = 'grid-cols-[1fr_auto_auto] sm:grid-cols-[2fr_0.9fr_0.8fr_auto]';
+// Market | Bet | Expiry.
+const COLS = 'grid-cols-[1fr_auto_auto] sm:grid-cols-[2fr_0.9fr_auto]';
 
 function HeaderRow() {
   return (
@@ -31,7 +29,6 @@ function HeaderRow() {
     >
       <span>Market</span>
       <span className="text-right">Bet</span>
-      <span className="hidden text-right sm:block">Liquidity</span>
       <span className="w-16 text-right">Expiry</span>
     </div>
   );
@@ -47,7 +44,6 @@ function SkeletonRows() {
             <div className="h-3.5 w-44 animate-pulse rounded bg-white/[0.06]" />
           </div>
           <div className="ml-auto h-3.5 w-16 animate-pulse rounded bg-white/[0.06]" />
-          <div className="ml-auto hidden h-3.5 w-12 animate-pulse rounded bg-white/[0.06] sm:block" />
           <div className="ml-auto h-3.5 w-12 animate-pulse rounded bg-white/[0.06]" />
         </div>
       ))}
@@ -63,13 +59,13 @@ export function LiveMarkets() {
   // those — the underlying Thetanuts book also lists AVAX/BNB/etc, but we
   // don't surface them here. Then show one market per (asset, direction) so
   // the table reads as a varied cross-section (PUMP / DUMP / RANGE on BTC and
-  // ETH), highest volume winning within each bucket.
+  // ETH), earliest-expiring quote winning within each bucket.
   const best = new Map<string, MarketView>();
   for (const m of markets) {
     if (m.asset !== 'BTC' && m.asset !== 'ETH') continue;
     const key = `${m.asset}-${m.direction}`;
     const cur = best.get(key);
-    if (!cur || m.availableUsdc > cur.availableUsdc) best.set(key, m);
+    if (!cur || m.expiry < cur.expiry || (m.expiry === cur.expiry && m.id < cur.id)) best.set(key, m);
   }
   const top = [...best.values()]
     .sort((a, b) =>
@@ -142,7 +138,6 @@ export function LiveMarkets() {
 
           {top.map((m, i) => {
             const f = framings[i]?.data;
-            const volume = Number(client.utils.fromUsdcDecimals(m.availableUsdc));
             return (
               <Link
                 key={m.id}
@@ -168,10 +163,6 @@ export function LiveMarkets() {
                 {/* Bet — multiplier (bounded) or strike threshold (vanilla) */}
                 <span className={`text-right font-mono text-sm font-semibold tabular-nums ${DIR_COLOR[m.direction]}`}>
                   {betLabel(m, f?.multiplier)}
-                </span>
-                {/* Volume */}
-                <span className="hidden text-right font-mono text-sm tabular-nums text-white/55 sm:block">
-                  {Number.isFinite(volume) ? fmtUsd(volume, { compact: true }) : '$0'}
                 </span>
                 {/* Expiry */}
                 <span className="flex w-16 justify-end">

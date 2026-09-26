@@ -53,8 +53,6 @@ export interface MarketView {
   expiry: number;
   /** Premium per contract (8-decimal). Comes directly from order.order.price. */
   pricePerContract: bigint;
-  /** Max collateral usable for this order, in USDC units (6-decimal). */
-  availableUsdc: bigint;
   /** Underlying SDK implementation name — analytics + debug */
   implName: string;
 }
@@ -346,13 +344,6 @@ export function buildMarketView(
   // sort, so the id is independent of the order strikes are returned in.
   const id = `${order.order.maker.toLowerCase()}-${raw.implementation.toLowerCase()}-${raw.isLong ? 'L' : 'S'}-${strikesAsc.map(String).join('_')}-${expirySec}`;
 
-  let availableUsdc = 0n;
-  try {
-    availableUsdc = BigInt(raw.maxCollateralUsable);
-  } catch {
-    availableUsdc = order.availableAmount;
-  }
-
   return {
     id,
     order,
@@ -367,7 +358,6 @@ export function buildMarketView(
     implementation: raw.implementation,
     expiry: expirySec,
     pricePerContract: order.order.price,
-    availableUsdc,
     implName: implInfo.name,
   };
 }

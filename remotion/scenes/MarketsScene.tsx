@@ -70,7 +70,6 @@ export const MarketsScene: React.FC = () => {
             direction="PUMP"
             chancePct={56}
             multiplier="1.8"
-            volume="$10K"
             expiry="16:00 UTC"
             selected={pumpSelected}
             selectProgress={selectProgress}
@@ -83,7 +82,6 @@ export const MarketsScene: React.FC = () => {
             direction="DUMP"
             chancePct={41}
             multiplier="2.4"
-            volume="$5K"
             expiry="16:00 UTC"
           />
         </div>

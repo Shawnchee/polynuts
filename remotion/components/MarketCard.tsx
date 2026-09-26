@@ -105,8 +105,8 @@ const TimerBadge: React.FC<{ label: string }> = ({ label }) => (
 
 /**
  * Remotion mirror of the app's <MarketCard>. Same anatomy: header (glyph +
- * question + % chance), a single direction CTA bar, and a liq/expiry meta
- * strip. Styling is hardcoded from the dark tokens (see theme.ts).
+ * question + % chance), a single direction CTA bar, and an expiry meta strip.
+ * Styling is hardcoded from the dark tokens (see theme.ts).
  *
  * `selected` raises the border, adds a faint ring + a top accent hairline in
  * the direction color — exactly the real card's selected affordance.
@@ -117,7 +117,6 @@ export const MarketCard: React.FC<{
   direction: Dir;
   chancePct: number;
   multiplier: string;
-  volume: string;
   expiry: string;
   selected?: boolean;
   /** 0..1 — how far the selected accent bar has wiped in. */
@@ -128,7 +127,6 @@ export const MarketCard: React.FC<{
   direction,
   chancePct,
   multiplier,
-  volume,
   expiry,
   selected = false,
   selectProgress = 0,
@@ -219,20 +217,17 @@ export const MarketCard: React.FC<{
         {`Bet ${direction} · ${multiplier}x max`}
       </div>
 
-      {/* Meta strip — {liq} liq (left) + TimerBadge (right) */}
+      {/* Meta strip — expiry */}
       <div
         style={{
           marginTop: 12,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           fontSize: 12,
           color: C.muted,
         }}
       >
-        <span style={{ fontFamily: FONT.mono }}>
-          <span style={{ color: C.text, fontWeight: 600 }}>{volume}</span> liq
-        </span>
         <TimerBadge label={expiry} />
       </div>
     </div>
