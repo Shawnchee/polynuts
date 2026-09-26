@@ -9,7 +9,8 @@ import { useMarkets } from '@/lib/sdk/useOrders';
 import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
 import { fmtUsd } from '@/lib/utils';
-import type { MarketView } from '@/lib/sdk/markets';
+import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
+import { useAppStore } from '@/store/app';
 
 const TOP_N = 6;
 const DIR_ORDER: Record<MarketView['direction'], number> = { PUMP: 0, DUMP: 1, RANGE: 2 };
@@ -58,6 +59,7 @@ function SkeletonRows() {
 export function LiveMarkets() {
   const { markets, isLoading } = useMarkets();
   const client = getReadClient();
+  const prices = useAppStore((s) => s.prices);
 
   // Polynuts positions as a BTC/ETH product, so the landing only showcases
   // those — the underlying Thetanuts book also lists AVAX/BNB/etc, but we
@@ -69,7 +71,13 @@ export function LiveMarkets() {
     if (m.asset !== 'BTC' && m.asset !== 'ETH') continue;
     const key = `${m.asset}-${m.direction}`;
     const cur = best.get(key);
-    if (!cur || m.availableUsdc > cur.availableUsdc) best.set(key, m);
+    if (
+      !cur ||
+      (marketLiquidityUsd(m, prices) ?? -1) >
+        (marketLiquidityUsd(cur, prices) ?? -1)
+    ) {
+      best.set(key, m);
+    }
   }
   const top = [...best.values()]
     .sort((a, b) =>
@@ -142,7 +150,7 @@ export function LiveMarkets() {
 
           {top.map((m, i) => {
             const f = framings[i]?.data;
-            const volume = Number(client.utils.fromUsdcDecimals(m.availableUsdc));
+            const volume = marketLiquidityUsd(m, prices);
             return (
               <Link
                 key={m.id}
@@ -171,7 +179,7 @@ export function LiveMarkets() {
                 </span>
                 {/* Volume */}
                 <span className="hidden text-right font-mono text-sm tabular-nums text-white/55 sm:block">
-                  {Number.isFinite(volume) ? fmtUsd(volume, { compact: true }) : '$0'}
+                  {volume != null && Number.isFinite(volume) ? fmtUsd(volume, { compact: true }) : '—'}
                 </span>
                 {/* Expiry */}
                 <span className="flex w-16 justify-end">

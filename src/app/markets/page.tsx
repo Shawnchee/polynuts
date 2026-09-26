@@ -12,14 +12,13 @@ import { TradeDrawer } from '@/components/trade/TradeDrawer';
 import { NetworkGuard } from '@/components/nav/NetworkGuard';
 import { useMarkets } from '@/lib/sdk/useOrders';
 import { useMarketBinaryFramings } from '@/lib/sdk/usePayout';
-import { getReadClient } from '@/lib/sdk/clients';
 import {
   useAppStore,
   applyFilterSort,
   buildExpiryGroups,
 } from '@/store/app';
 import { cn } from '@/lib/utils';
-import type { MarketView } from '@/lib/sdk/markets';
+import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
 import type { ExpiryFilter } from '@/store/app';
 
 // 20 divides evenly into the 2/4/5-column breakpoints so pages don't end on a
@@ -41,6 +40,7 @@ export default function MarketsPage() {
   const setExpiryFilter = useAppStore((s) => s.setExpiryFilter);
   const selectedId = useAppStore((s) => s.selectedMarketId);
   const selectMarket = useAppStore((s) => s.selectMarket);
+  const prices = useAppStore((s) => s.prices);
 
   // Selecting a market opens the trade drawer (a focused overlay), so there's
   // no off-screen sticky panel to scroll into view any more — just set the
@@ -100,26 +100,20 @@ export default function MarketsPage() {
         filter,
         sort,
         (m) => multiplierByMarket.get(m.id) ?? null,
-        expiryFilter
+        expiryFilter,
+        prices
       ),
-    [markets, filter, sort, multiplierByMarket, expiryFilter]
+    [markets, filter, sort, multiplierByMarket, expiryFilter, prices]
   );
 
   // Top-N featured strip — ranked by available volume × multiplier so we
   // surface markets with both real liquidity and meaningful upside.
   // Hidden when there's <= FEATURED_COUNT total or no multipliers loaded.
-  // Volume + multiplier both flow from SDK paths
-  // (client.utils.fromUsdcDecimals + client.option.simulatePayout); the
+  // USD liquidity uses collateral token decimals and the live underlying spot;
+  // multiplier comes from client.option.simulatePayout. The
   // composite score formula is product-taxonomy, not a payout calculation.
-  const client = getReadClient();
 
-  // Signature of the featured INPUT that should trigger a re-rank: the market
-  // SET plus whether each market has a resolved multiplier yet. It intentionally
-  // excludes the multiplier VALUE and availableUsdc, both of which tick every
-  // 30s poll. `multiplierByMarket.has(id)` only flips false->true once (on first
-  // resolve; keepPreviousData holds it thereafter), so a value tick never changes
-  // the signature — but a new listing, an expiry, a filter/expiry-scope change,
-  // or a first multiplier resolve all do.
+  // Market set plus multiplier availability controls featured membership.
   const featuredSig = useMemo(() => {
     if (filtered.length < FEATURED_MIN) return '';
     return filtered
@@ -128,17 +122,13 @@ export default function MarketsPage() {
       .join('|');
   }, [filtered, multiplierByMarket]);
 
-  // Frozen ranked membership: recompute the top-N featured id list ONLY when
-  // featuredSig changes (market set / first-multiplier-resolve), never on a
-  // pure value tick — that boundary re-ranking was reshuffling `rest` and the
-  // page-1 slice. Keyed on featuredSig alone; filtered/multiplierByMarket are
-  // read for their latest values by design, so an unchanged signature reuses
-  // the previous list (no cross-render ref needed).
+  // Re-rank when the market set, payout availability, or an underlying spot
+  // changes, so mixed-collateral liquidity remains comparable in USD.
   const featuredIdList = useMemo(() => {
     if (filtered.length < FEATURED_MIN) return [] as string[];
     return [...filtered]
       .map((m) => {
-        const vol = Number(client.utils.fromUsdcDecimals(m.availableUsdc));
+        const vol = marketLiquidityUsd(m, prices) ?? 0;
         const mult = multiplierByMarket.get(m.id) ?? 0;
         return { id: m.id, score: vol * Math.max(1, Math.min(10, mult)) };
       })
@@ -149,12 +139,7 @@ export default function MarketsPage() {
       )
       .slice(0, FEATURED_COUNT)
       .map((r) => r.id);
-    // Keyed on featuredSig only, on purpose: re-ranking on every value tick is
-    // exactly the churn being fixed. featuredSig already changes whenever the
-    // market set or a first-multiplier-resolve changes — i.e. when we must
-    // re-rank — so reading the latest filtered/multiplier here is intentional.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [featuredSig]);
+  }, [featuredSig, prices.ETH, prices.BTC]);
 
   // Resolve the frozen ids back to CURRENT market objects so displayed values
   // stay live; only membership + order are frozen between signature changes.

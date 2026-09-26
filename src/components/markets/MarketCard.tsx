@@ -1,11 +1,12 @@
 'use client';
 
-import type { MarketView } from '@/lib/sdk/markets';
+import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { TokenIcon } from '@/components/ui/TokenIcon';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
+import { useAppStore } from '@/store/app';
 
 const directionGlow: Record<MarketView['direction'], string> = {
   PUMP: 'glow-pump',
@@ -13,9 +14,8 @@ const directionGlow: Record<MarketView['direction'], string> = {
   RANGE: 'glow-range',
 };
 
-// Safe money — guards NaN/Infinity from SDK decimal parsing so a brand-new
-// market with an empty/odd availableUsdc never renders "$NaN". fmtUsd itself
-// lives in lib/utils (not owned here); see report note.
+// Safe money — unknown collateral valuations render as unavailable rather
+// than implying that native token units are USDC.
 function safeUsd(n: number, opts?: { compact?: boolean }): string {
   return Number.isFinite(n) ? fmtUsd(n, opts) : '$0.00';
 }
@@ -59,7 +59,8 @@ export function MarketCard({
   onSelect: (id: string) => void;
 }) {
   const client = getReadClient();
-  const volume = Number(client.utils.fromUsdcDecimals(market.availableUsdc));
+  const prices = useAppStore((s) => s.prices);
+  const volume = marketLiquidityUsd(market, prices);
   const { data: binary, isLoading: binaryLoading } = useMarketBinaryFraming(market);
   // Implied probability for the % chance corner indicator only — derived
   // from the SDK-simulated max payout (1 / multiplier). No NO side; the
@@ -182,7 +183,7 @@ export function MarketCard({
         </div>
         <span className="num shrink-0 text-[11px] tabular-nums text-text-dim">
           <span className="font-medium text-text-muted">
-            {safeUsd(volume, { compact: true })}
+            {volume == null ? '—' : safeUsd(volume, { compact: true })}
           </span>{' '}
           liq
         </span>
@@ -215,4 +216,3 @@ function OutcomeButton({
     </div>
   );
 }
-

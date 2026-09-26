@@ -53,8 +53,11 @@ export interface MarketView {
   expiry: number;
   /** Premium per contract (8-decimal). Comes directly from order.order.price. */
   pricePerContract: bigint;
-  /** Max collateral usable for this order, in USDC units (6-decimal). */
-  availableUsdc: bigint;
+  /** Max collateral usable for this order, in the collateral token's native units. */
+  availableCollateral: bigint;
+  /** Collateral token information; maker liquidity is denominated in this token. */
+  collateralSymbol: string | null;
+  collateralDecimals: number | null;
   /** Underlying SDK implementation name — analytics + debug */
   implName: string;
 }
@@ -70,6 +73,28 @@ export const SUPPORTED_ASSETS = new Set(['ETH', 'BTC']);
 
 export function isSupportedAsset(asset: string): boolean {
   return SUPPORTED_ASSETS.has(asset);
+}
+
+/** Convert maker collateral liquidity to USD using its actual token units. */
+export function marketLiquidityUsd(
+  market: Pick<
+    MarketView,
+    'availableCollateral' | 'collateralSymbol' | 'collateralDecimals' | 'asset'
+  >,
+  prices: Partial<Record<'ETH' | 'BTC', number>>
+): number | null {
+  const { collateralSymbol, collateralDecimals, availableCollateral, asset } = market;
+  if (!collateralSymbol || collateralDecimals == null || availableCollateral < 0n) return null;
+  const amount = Number(availableCollateral) / 10 ** collateralDecimals;
+  if (!Number.isFinite(amount)) return null;
+  if (collateralSymbol.toUpperCase() === 'USDC') return amount;
+  const symbol = collateralSymbol.toUpperCase();
+  const underlying = symbol === 'WETH' ? 'ETH' : symbol === 'CBBTC' ? 'BTC' : null;
+  if (!underlying || underlying !== asset) return null;
+  const spot = prices[underlying];
+  return typeof spot === 'number' && Number.isFinite(spot) && spot > 0
+    ? amount * spot
+    : null;
 }
 
 export const SUPPORTED_IMPLS = new Set([
@@ -346,12 +371,18 @@ export function buildMarketView(
   // sort, so the id is independent of the order strikes are returned in.
   const id = `${order.order.maker.toLowerCase()}-${raw.implementation.toLowerCase()}-${raw.isLong ? 'L' : 'S'}-${strikesAsc.map(String).join('_')}-${expirySec}`;
 
-  let availableUsdc = 0n;
+  let availableCollateral = 0n;
   try {
-    availableUsdc = BigInt(raw.maxCollateralUsable);
+    availableCollateral = BigInt(raw.maxCollateralUsable);
   } catch {
-    availableUsdc = order.availableAmount;
+    availableCollateral = order.availableAmount;
   }
+
+  const collateral = Object.values(config.tokens).find(
+    (token) => token.address.toLowerCase() === raw.collateral.toLowerCase()
+  );
+  const collateralSymbol = collateral?.symbol ?? null;
+  const collateralDecimals = collateral?.decimals ?? null;
 
   return {
     id,
@@ -367,7 +398,9 @@ export function buildMarketView(
     implementation: raw.implementation,
     expiry: expirySec,
     pricePerContract: order.order.price,
-    availableUsdc,
+    availableCollateral,
+    collateralSymbol,
+    collateralDecimals,
     implName: implInfo.name,
   };
 }

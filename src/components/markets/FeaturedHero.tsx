@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Flame } from 'lucide-react';
-import type { MarketView } from '@/lib/sdk/markets';
+import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
 import { TimerBadge } from '@/components/ui/TimerBadge';
 import { TokenIcon } from '@/components/ui/TokenIcon';
 import { fmtUsd, cn } from '@/lib/utils';
 import { useMarketBinaryFraming } from '@/lib/sdk/usePayout';
 import { getReadClient } from '@/lib/sdk/clients';
+import { useAppStore } from '@/store/app';
 
 const ROTATE_MS = 9_000;
 
@@ -134,7 +135,8 @@ function HeroBanner({
       : null;
   const multiplier = binary?.multiplier ?? null;
   const binaryLoading = !binary && market.family !== 'vanilla';
-  const volume = Number(client.utils.fromUsdcDecimals(market.availableUsdc));
+  const prices = useAppStore((s) => s.prices);
+  const volume = marketLiquidityUsd(market, prices);
   const isVanilla = market.family === 'vanilla';
   const dirColor = dirText(market.direction);
 
@@ -217,7 +219,7 @@ function HeroBanner({
         <span className="hidden h-8 w-px bg-line sm:block" aria-hidden />
         <PairStat label="Liquidity">
           <span className="num text-sm font-semibold tabular-nums text-text">
-            {safeUsd(volume, { compact: true })}
+            {volume == null ? '—' : safeUsd(volume, { compact: true })}
           </span>
         </PairStat>
       </div>

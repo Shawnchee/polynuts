@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { MarketCard } from '@/components/markets/MarketCard';
 import { useMarkets } from '@/lib/sdk/useOrders';
-import type { MarketView } from '@/lib/sdk/markets';
+import { marketLiquidityUsd, type MarketView } from '@/lib/sdk/markets';
+import { useAppStore } from '@/store/app';
 
 const DIR_ORDER: Record<MarketView['direction'], number> = { PUMP: 0, DUMP: 1, RANGE: 2 };
 
@@ -11,13 +12,22 @@ const DIR_ORDER: Record<MarketView['direction'], number> = { PUMP: 0, DUMP: 1, R
 // hero preview only showcases those. One market per (asset, direction),
 // highest volume winning, then take the top two so the window shows a varied,
 // real cross-section (typically BTC PUMP + BTC DUMP — green/rose contrast).
-function pickTwo(markets: MarketView[]): MarketView[] {
+function pickTwo(
+  markets: MarketView[],
+  prices: Partial<Record<'ETH' | 'BTC', number>>
+): MarketView[] {
   const best = new Map<string, MarketView>();
   for (const m of markets) {
     if (m.asset !== 'BTC' && m.asset !== 'ETH') continue;
     const key = `${m.asset}-${m.direction}`;
     const cur = best.get(key);
-    if (!cur || m.availableUsdc > cur.availableUsdc) best.set(key, m);
+    if (
+      !cur ||
+      (marketLiquidityUsd(m, prices) ?? -1) >
+        (marketLiquidityUsd(cur, prices) ?? -1)
+    ) {
+      best.set(key, m);
+    }
   }
   return [...best.values()]
     .sort((a, b) =>
@@ -51,7 +61,8 @@ function CardSkeleton() {
 export function HeroAppPreview() {
   const router = useRouter();
   const { markets, isLoading } = useMarkets();
-  const picks = pickTwo(markets);
+  const prices = useAppStore((s) => s.prices);
+  const picks = pickTwo(markets, prices);
   const showSkeleton = isLoading && picks.length === 0;
   const empty = !isLoading && picks.length === 0;
 
