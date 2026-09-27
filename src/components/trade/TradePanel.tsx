@@ -51,10 +51,11 @@ type ChartTab = 'payout' | 'spot';
 // at submit, so partial input ("1.", "0.") doesn't get clobbered.
 const SIZES = [1, 5, 10, 25, 100] as const;
 const MIN_BET = 0.5;
+const MAX_BET_USDC = 50_000_000n;
 
 function formatUsdc6(amount: bigint): string {
   return Number(fromBigInt(amount, 6)).toLocaleString('en-US', {
-    maximumFractionDigits: 6,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -197,16 +198,24 @@ export function TradePanel({
   // pure module helper so the React Compiler memoizes it with the render.
   const feeUsdc = computeBrokerFee(feeBps, amount, market);
   const feeUsd = Number(feeUsdc) / 1e6;
-  const maxBetUsd = preview ? Number(preview.maxSupportedUsdc) / 1e6 : 0;
-  const maxBetLabel = preview ? formatUsdc6(preview.maxSupportedUsdc) : null;
+  // Bound each trade by both the maker order's actual capacity and the
+  // product-level $50 stake limit. Keep this in bigint USDC units so the
+  // cap is enforced exactly at submit time too.
+  const maxBetUsdc = preview
+    ? preview.maxSupportedUsdc < MAX_BET_USDC
+      ? preview.maxSupportedUsdc
+      : MAX_BET_USDC
+    : 0n;
+  const maxBetUsd = Number(maxBetUsdc) / 1e6;
+  const maxBetLabel = preview ? formatUsdc6(maxBetUsdc) : null;
   const amountExceedsQuote = useMemo(() => {
     if (!preview) return false;
     try {
-      return toBigInt(String(amount), 6) > preview.maxSupportedUsdc;
+      return toBigInt(String(amount), 6) > maxBetUsdc;
     } catch {
       return true;
     }
-  }, [amount, preview]);
+  }, [amount, maxBetUsdc, preview]);
 
   // Flag the global store while a trade is mid-flight (confirm modal open,
   // approving, or fill submitting) so order-book polling pauses and the
@@ -413,8 +422,8 @@ export function TradePanel({
       toast.error(`Minimum bet is $${MIN_BET.toFixed(2)} USDC`);
       return;
     }
-    if (preview && toBigInt(String(amount), 6) > preview.maxSupportedUsdc) {
-      toast.error(`This quote supports up to $${maxBetLabel} USDC`);
+    if (preview && toBigInt(String(amount), 6) > maxBetUsdc) {
+      toast.error(`Maximum bet for this market is $${maxBetLabel} USDC`);
       return;
     }
     if (!preview) {
@@ -817,13 +826,13 @@ export function TradePanel({
               key="max"
               onClick={() => setAmountInput(maxBetUsd.toFixed(6).replace(/0+$/, '').replace(/\.$/, ''))}
               className={cn(
-                'press-scale min-h-[44px] rounded-md border px-1 py-2 text-sm font-medium tabular-nums num transition-colors duration-120 sm:min-h-0',
+                'press-scale col-span-5 min-h-[44px] rounded-md border px-3 py-2 text-sm font-medium tabular-nums num transition-colors duration-120 sm:min-h-0',
                 !amountExceedsQuote && amount === maxBetUsd
                   ? 'border-text bg-text text-bg-elev'
                   : 'border-line text-text hover:border-text-dim hover:bg-surface-hover'
               )}
             >
-              Max ${maxBetLabel}
+              Max · ${maxBetLabel}
             </button>
           )}
         </div>
@@ -854,17 +863,17 @@ export function TradePanel({
         )}
         {preview && maxBetUsd >= MIN_BET && (
           <p className="mt-1 text-xs text-text-dim">
-            Quote supports ${MIN_BET.toFixed(2)}–${maxBetLabel} USDC
+            Maximum bet: ${maxBetLabel} USDC; your wallet balance may be lower.
           </p>
         )}
         {preview && maxBetUsd < MIN_BET && (
           <p className="mt-1 text-xs text-dump dark:text-dump-dark">
-            Quote maximum ${maxBetLabel} is below the ${MIN_BET.toFixed(2)} minimum
+            Available maximum ${maxBetLabel} is below the ${MIN_BET.toFixed(2)} minimum
           </p>
         )}
         {amountExceedsQuote && (
           <p className="mt-1 text-xs text-dump dark:text-dump-dark">
-            Amount exceeds this quote’s ${maxBetLabel} maximum
+            Amount exceeds this market’s ${maxBetLabel} maximum
           </p>
         )}
       </div>
